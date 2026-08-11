@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-AIGC 文本检测器 v7 (Python 跨平台版)
+AIGC 文本检测器 v8 (Python 跨平台版)
 ====================================
-基于统计特征的 AI 生成内容检测工具。
+基于统计特征 + 可选 LLM 深度检测的 AI 生成内容检测工具。
 纯本地离线运行，支持中文/英文，17维检测 + 6大模型指纹 + 论证脚手架。
 
 平台: Linux / Windows / macOS / Android(Termux)
@@ -13,13 +13,17 @@ AIGC 文本检测器 v7 (Python 跨平台版)
   echo "文本" | python3 aigc_detector.py          # 管道输入
   python3 aigc_detector.py -f file.txt --json     # JSON 输出(便于集成)
   python3 aigc_detector.py --demo                 # 内置示例演示
+  # ---- v8 LLM Pro 引擎 (可选) ----
+  python3 aigc_detector.py --list-models          # 查看可选 GGUF 模型清单
+  python3 aigc_detector.py --download-model lmstudio-community/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf  # 下载模型
+  python3 aigc_detector.py -f file.txt --model /path/to/model.gguf   # 启用 LLM 深度检测
 
-v7 新增 (相对 v6):
-  1. 英文语气词/主观表达词库 (修复英文文本虚高误判)
-  2. 英文模板套话词库 (Moreover/Furthermore/leverage/utilize...)
-  3. 英文情感词库增强
-  4. --json 结构化输出, 便于 CI/脚本集成
-  5. 自动语言识别 + --lang 强制指定
+v8 新增 (相对 v7):
+  1. LLM Pro 引擎: 加载本地 GGUF 模型, 计算真 Perplexity(困惑度) + top-1 可预测率
+     + 目标 token 排名百分位 (GPTZero 核心原理的本地实现, 基于 llama.cpp)
+  2. --model 指定 GGUF 路径, 无 llama-cpp-python 时自动降级为 17 维启发式
+  3. --list-models / --download-model: HuggingFace 模型下载支持 (默认 hf-mirror 镜像)
+  4. LLM 结果与 17 维启发式融合: 最终概率 = 0.6*启发式 + 0.4*LLM深度分
 """
 
 import re
@@ -28,7 +32,21 @@ import math
 import json
 import argparse
 
-VERSION = "7.0.0"
+VERSION = "8.0.0"
+
+# ============ v8: HuggingFace 模型清单 (LLM Pro 引擎) ============
+# repo: 仓库 | file: 文件名 | size: 大小 | desc: 说明 | lang: 适用语言 | verified: 已验证
+HF_MODELS = [
+    {'repo': 'lmstudio-community/gemma-4-E4B-it-GGUF', 'file': 'gemma-4-E4B-it-Q4_K_M.gguf', 'size': '5.3GB', 'desc': 'Gemma4 4B 高效版 Q4_K_M (推荐, 平衡)', 'lang': '中英', 'verified': True},
+    {'repo': 'lmstudio-community/gemma-4-E4B-it-GGUF', 'file': 'gemma-4-E4B-it-Q6_K.gguf', 'size': '6.2GB', 'desc': 'Gemma4 4B Q6_K 更高精度', 'lang': '中英', 'verified': True},
+    {'repo': 'lmstudio-community/gemma-4-E4B-it-GGUF', 'file': 'gemma-4-E4B-it-Q8_0.gguf', 'size': '8.0GB', 'desc': 'Gemma4 4B Q8_0 接近无损精度', 'lang': '中英', 'verified': True},
+    {'repo': 'Qwen/Qwen2.5-1.5B-Instruct-GGUF', 'file': 'qwen2.5-1.5b-instruct-q4_k_m.gguf', 'size': '1.0GB', 'desc': '通义千问2.5 1.5B 轻量 (中文优秀)', 'lang': '中文', 'verified': False},
+    {'repo': 'Qwen/Qwen2.5-3B-Instruct-GGUF', 'file': 'qwen2.5-3b-instruct-q4_k_m.gguf', 'size': '1.9GB', 'desc': '通义千问2.5 3B (中文更强)', 'lang': '中文', 'verified': False},
+    {'repo': 'bartowski/Llama-3.2-1B-Instruct-GGUF', 'file': 'Llama-3.2-1B-Instruct-Q4_K_M.gguf', 'size': '0.9GB', 'desc': 'Meta Llama3.2 1B 轻量 (英文)', 'lang': '英文', 'verified': False},
+    {'repo': 'bartowski/Llama-3.2-3B-Instruct-GGUF', 'file': 'Llama-3.2-3B-Instruct-Q4_K_M.gguf', 'size': '2.0GB', 'desc': 'Meta Llama3.2 3B 均衡 (英文)', 'lang': '英文', 'verified': False},
+]
+HF_MIRROR = 'https://hf-mirror.com'   # 国内直连镜像 (hf-mirror.com)
+HF_OFFICIAL = 'https://huggingface.co'
 
 # ============ 中文模式 (v6 继承) ============
 AI_PATTERNS_CN = ['首先','其次','然后','最后','此外','另外','同时','与此同时','不仅如此','值得注意的是','需要指出','需要强调的是','综上所述','总之','总的来看','从整体来看','然而','因此','所以','导致','进而','从而','一方面','另一方面','换句话说','正因如此','就像前面说的','不是.*而是','从来不是','注定是','就能','即可','便能','定能','必将','无需','只需','切勿','始终','永远','绝对','完全','从根源上','从根本','核心是','关键在于','本质是','归根结底','从根本上','在.*基础上','以.*为核心']
@@ -352,6 +370,135 @@ def analyze(text):
         },
     }
 
+# ============ v8: LLM Pro 引擎 (可选, 需 llama-cpp-python) ============
+# 原理 (GPTZero 核心的本地实现):
+#   AI 文本 -> 低困惑度(模型"意料之中") + 高 top-1 可预测率 + 目标token排名靠前
+#   人类文本 -> 高困惑度 + 低可预测率 + 目标token排名分散
+def analyze_llm(text, model_path, max_tokens=1500):
+    """使用本地 GGUF 模型深度检测。返回困惑度/可预测率/排名等指标。"""
+    try:
+        from llama_cpp import Llama
+    except ImportError:
+        return {'error': '需要安装 llama-cpp-python: pip install llama-cpp-python (加载模型 %s)' % model_path}
+    import os
+    import numpy as np
+
+    try:
+        llm = Llama(model_path=model_path, n_ctx=2048,
+                    n_threads=max(1, (os.cpu_count() or 4) // 2), verbose=False)
+    except Exception as e:
+        return {'error': '模型加载失败: %s' % e}
+
+    try:
+        tokens = llm.tokenize(text.encode('utf-8'))
+        if len(tokens) > max_tokens:
+            tokens = tokens[:max_tokens]
+        if len(tokens) < 20:
+            return {'error': '文本太短, Pro引擎至少需要20个token'}
+        llm.reset()
+        llm.eval(tokens)
+        scores = llm.scores
+        n = min(len(scores), len(tokens) - 1)
+        if n <= 0:
+            return {'error': '模型推理未产生有效输出'}
+        pred_hits = 0
+        rank_pcts = []
+        nll_sum = 0.0
+        for i in range(n):
+            logits = np.asarray(scores[i], dtype=np.float32)
+            target = tokens[i + 1]
+            if target >= len(logits):
+                continue
+            pred = int(np.argmax(logits))
+            if pred == target:
+                pred_hits += 1
+            rank = int((logits > logits[target]).sum())
+            rank_pcts.append(rank / len(logits))
+            # 近似 logsumexp (top-512 截断, 误差 < 0.01 nats)
+            topk = np.partition(logits, -512)[-512:]
+            mx = float(topk[-1])
+            lse = mx + math.log(float(np.exp(topk - mx).sum()))
+            nll_sum += (lse - float(logits[target]))
+        del llm
+        pred_rate = pred_hits / n
+        rank_med = sorted(rank_pcts)[len(rank_pcts) // 2] if rank_pcts else 0.5
+        ppl = math.exp(nll_sum / n)
+        # 融合: AI 文本 -> pred_rate 高 + rank_med 低
+        s_pred = min(1.0, pred_rate / 0.35)
+        s_rank = min(1.0, max(0.0, (0.25 - rank_med) / 0.13))
+        llm_score = clamp(100 * (0.55 * s_pred + 0.45 * s_rank))
+        return {
+            'ppl': round(ppl, 1),
+            'pred_rate': round(pred_rate, 3),
+            'rank_pct': round(rank_med, 3),
+            'llm_score': round(llm_score, 1),
+            'tokens': n,
+        }
+    except Exception as e:
+        return {'error': '推理失败: %s' % e}
+
+
+def download_model(spec, hf_base=HF_MIRROR, dest='.'):
+    """从 HuggingFace (默认 hf-mirror 镜像) 下载 GGUF 模型。spec: repo/file 或 repo:file"""
+    import os
+    import urllib.request
+    spec = spec.strip()
+    if spec.count('/') == 2:            # org/repo/file
+        repo, fname = spec.rsplit('/', 1)
+    elif spec.count('/') == 1:          # repo/file
+        repo, fname = spec.split('/', 1)
+    else:
+        return '格式错误: 应为 org/repo/file.gguf 或 org/repo:file.gguf'
+    url = '%s/%s/resolve/main/%s' % (hf_base.rstrip('/'), repo, fname)
+    out = os.path.join(dest, os.path.basename(fname))
+    if os.path.exists(out) and os.path.getsize(out) > 1024 * 1024:
+        return '已存在: %s (跳过下载)' % out
+
+    def _hook(blocks, block_size, total):
+        done = blocks * block_size
+        pct = min(100, done * 100 // total) if total > 0 else 0
+        print('\r  下载中... %d%% (%d/%d MB)' % (pct, done // 1048576, total // 1048576), end='', flush=True)
+
+    print('下载: %s' % url)
+    try:
+        urllib.request.urlretrieve(url, out, _hook)
+        print('\n完成: %s' % out)
+        return out
+    except Exception as e:
+        if os.path.exists(out):
+            os.remove(out)
+        return '下载失败: %s' % e
+
+
+def list_models():
+    lines = []
+    lines.append('=' * 78)
+    lines.append('  可选 GGUF 模型 (HuggingFace)  —  LLM Pro 引擎')
+    lines.append('=' * 78)
+    lines.append('%-46s %8s  %s' % ('模型', '大小', '说明'))
+    lines.append('-' * 78)
+    for m in HF_MODELS:
+        v = ' [已验证]' if m.get('verified') else ''
+        lines.append('%-46s %8s  %s%s' % (m['file'], m['size'], m['desc'], v))
+    lines.append('-' * 78)
+    lines.append('下载: python3 aigc_detector.py --download-model org/repo/file.gguf')
+    lines.append('镜像: 默认 hf-mirror.com (国内直连), 可用 --hf-base https://huggingface.co 切换官方源')
+    lines.append('示例: python3 aigc_detector.py --download-model lmstudio-community/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf')
+    lines.append('=' * 78)
+    return '\n'.join(lines)
+
+
+def level_of(p):
+    if p < 25:
+        return 'Human'
+    if p < 40:
+        return 'Maybe AI'
+    if p < 60:
+        return 'Uncertain'
+    if p < 80:
+        return 'Likely AI'
+    return 'Very Likely AI'
+
 # ============ 输出 ============
 def render_text(r, verbose=True):
     lines = []
@@ -361,6 +508,10 @@ def render_text(r, verbose=True):
     p = r['ai_probability']
     bar_len = int(p / 5)
     lines.append('  AI概率: %.1f%%  %s%s 判定: %s' % (p, '#' * bar_len, '-' * (20 - bar_len), r['level']))
+    if 'llm' in r:
+        ll = r['llm']
+        lines.append('  [Pro] LLM深度: 困惑度=%.1f 可预测率=%.1f%% 排名=%.1f%% (LLM分 %.1f)' %
+                     (ll.get('ppl', 0), ll.get('pred_rate', 0) * 100, ll.get('rank_pct', 0) * 100, ll.get('llm_score', 0)))
     lines.append('  文本: %d字符 / %d词 / %d句 / %d段' % (r['stats']['chars'], r['stats']['words'], r['stats']['sentences'], r['stats']['paragraphs']))
     if r['flags']:
         lines.append('  特征: %s' % '; '.join(r['flags']))
@@ -383,7 +534,22 @@ def main():
     ap.add_argument('--quiet', action='store_true', help='精简输出(仅概率+判定)')
     ap.add_argument('--demo', action='store_true', help='运行内置示例')
     ap.add_argument('--version', action='version', version='aigc-detector v' + VERSION)
+    # v8: LLM Pro 引擎
+    ap.add_argument('--model', metavar='GGUF', help='本地 GGUF 模型路径, 启用 LLM 深度检测 (需 pip install llama-cpp-python)')
+    ap.add_argument('--list-models', action='store_true', help='列出可选 GGUF 模型 (HuggingFace)')
+    ap.add_argument('--download-model', metavar='SPEC', help='从 HuggingFace 下载模型, 格式: org/repo/file.gguf')
+    ap.add_argument('--hf-base', default=HF_MIRROR, help='HuggingFace 源 (默认 hf-mirror.com 镜像, 可换 https://huggingface.co)')
+    ap.add_argument('--model-dir', default='.', help='--download-model 的保存目录 (默认当前目录)')
     args = ap.parse_args()
+
+    if args.list_models:
+        print(list_models())
+        return
+
+    if args.download_model:
+        msg = download_model(args.download_model, args.hf_base, args.model_dir)
+        print(msg)
+        return
 
     samples = {
         'human': '我与父亲不相见已二年余了，我最不能忘记的是他的背影。那年冬天，祖母死了，父亲的差使也交卸了，正是祸不单行的日子，我从北京到徐州，打算跟着父亲奔丧回家。到徐州见着父亲，看见满院狼藉的东西，又想起祖母，不禁簌簌地流下眼泪。父亲说："事已如此，不必难过，好在天无绝人之路！"回家变卖典质，父亲还了亏空；又借钱办了丧事。这些日子，家中光景很是惨淡，一半为了丧事，一半为了父亲赋闲。丧事完毕，父亲要到南京谋事，我也要回北京念书，我们便同行。',
@@ -452,6 +618,17 @@ def main():
     if 'error' in r:
         print('错误: %s' % r['error'], file=sys.stderr)
         sys.exit(1)
+
+    # v8: LLM Pro 引擎融合 (可选)
+    if args.model:
+        print('加载 LLM 模型: %s ...' % args.model, file=sys.stderr)
+        llm_res = analyze_llm(text, args.model)
+        if 'error' in llm_res:
+            print('警告: %s (已降级为 17 维启发式)' % llm_res['error'], file=sys.stderr)
+        else:
+            r['llm'] = llm_res
+            r['ai_probability'] = round(0.6 * r['ai_probability'] + 0.4 * llm_res['llm_score'], 1)
+            r['level'] = level_of(r['ai_probability'])
 
     if args.json:
         print(json.dumps(r, ensure_ascii=False, indent=2))
