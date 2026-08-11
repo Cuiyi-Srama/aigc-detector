@@ -25,11 +25,11 @@ from tkinter import ttk, scrolledtext, filedialog, messagebox
 # 保证可独立运行 (直接运行本文件时也能找到 aigc_detector)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from aigc_detector import analyze, VERSION
+    from aigc_detector import analyze, VERSION, analyze_llm, level_of, HF_MODELS
 except ImportError:
     # 兜底: 内联引用
     VERSION = "7.0.0"
-    from aigc_detector import analyze, VERSION
+    from aigc_detector import analyze, VERSION, analyze_llm, level_of, HF_MODELS
 
 LEVEL_COLORS = {
     'Human': '#4caf50',
@@ -118,6 +118,21 @@ class AigcDetectorApp:
             ttk.Button(fs, text=name, style='Ghost.TButton',
                        command=lambda n=name: self.load_sample(n)).pack(side='left', padx=(0, 4))
 
+        # v8: LLM Pro 引擎 (模型选择)
+        fm = ttk.Frame(self.root)
+        fm.pack(fill='x', padx=16, pady=(4, 0))
+        self.model_path = tk.StringVar()
+        ttk.Label(fm, text='LLM模型:', background='#12121e', foreground='#00e5ff',
+                  font=('Sans', 9)).pack(side='left')
+        ttk.Entry(fm, textvariable=self.model_path, font=('Sans', 9)).pack(side='left', fill='x', expand=True, padx=(6, 0))
+        ttk.Button(fm, text='选择', style='Ghost.TButton',
+                   command=self.choose_model).pack(side='left', padx=(6, 0))
+        ttk.Button(fm, text='模型清单', style='Ghost.TButton',
+                   command=self.show_models).pack(side='left', padx=(4, 0))
+        self.model_hint = ttk.Label(self.root, text='未启用 LLM 深度检测 (17维启发式)',
+                                    background='#12121e', foreground='#666666', font=('Sans', 8))
+        self.model_hint.pack(fill='x', padx=16)
+
     def _build_result(self):
         f = ttk.Frame(self.root)
         f.pack(fill='both', expand=True, padx=16, pady=8)
@@ -179,6 +194,24 @@ class AigcDetectorApp:
         except Exception as e:
             messagebox.showerror('错误', '读取文件失败: %s' % e)
 
+    def choose_model(self):
+        path = filedialog.askopenfilename(filetypes=[('GGUF模型', '*.gguf'), ('所有文件', '*.*')],
+                                          title='选择本地 GGUF 模型')
+        if path:
+            self.model_path.set(path)
+            self.model_hint.config(text='已启用 LLM 深度检测: %s' % os.path.basename(path),
+                                   foreground='#00e5ff')
+
+    def show_models(self):
+        lines = ['可选 GGUF 模型 (HuggingFace, 国内用 hf-mirror.com 镜像):', '']
+        for m in HF_MODELS:
+            v = ' ✅已验证' if m.get('verified') else ''
+            lines.append('• %s  (%s)  %s%s' % (m['file'], m['size'], m['desc'], v))
+            lines.append('  下载: https://hf-mirror.com/%s/resolve/main/%s' % (m['repo'], m['file']))
+        lines.append('')
+        lines.append('下载后点击"选择"按钮加载 .gguf 文件即可启用 Pro 检测。')
+        messagebox.showinfo('模型清单', '\n'.join(lines))
+
     def _bar_color(self, score):
         if score < 30:
             return '#4caf50'
@@ -197,6 +230,23 @@ class AigcDetectorApp:
         if 'error' in r:
             messagebox.showerror('错误', r['error'])
             return
+
+        # v8: LLM Pro 引擎
+        model = self.model_path.get().strip()
+        if model:
+            self.model_hint.config(text='LLM 推理中... (首次加载较慢)', foreground='#ffc107')
+            self.root.update_idletasks()
+            llm_res = analyze_llm(txt, model)
+            if 'error' in llm_res:
+                self.model_hint.config(text='LLM 不可用: %s' % llm_res['error'], foreground='#f44336')
+            else:
+                r['llm'] = llm_res
+                r['ai_probability'] = round(0.6 * r['ai_probability'] + 0.4 * llm_res['llm_score'], 1)
+                r['level'] = level_of(r['ai_probability'])
+                self.model_hint.config(
+                    text='LLM深度: 困惑度 %.1f · 可预测率 %.1f%% · 排名 %.1f%% (分 %.1f)'
+                         % (llm_res['ppl'], llm_res['pred_rate'] * 100, llm_res['rank_pct'] * 100, llm_res['llm_score']),
+                    foreground='#00e5ff')
 
         p = r['ai_probability']
         color = LEVEL_COLORS.get(r['level'], '#888888')
