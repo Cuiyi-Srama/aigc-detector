@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
-<title>AIGC 文本检测 v6</title>
+<title>AIGC 文本检测 v8</title>
 <style>
 :root{--bg:#111;--card:#1a1a2e;--text:#e0e0e0;--accent:#00e5ff;--border:#2a2a3e;--g:#4caf50;--y:#ffc107;--o:#ff9800;--r:#f44336}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -50,6 +50,18 @@ textarea:focus{border-color:var(--accent)}
 .history-item{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;margin:2px 0;background:var(--card);border-radius:6px;font-size:10px;cursor:pointer}
 .history-pct{font-weight:700;font-size:11px}
 .history-label{font-size:8px;padding:1px 5px;border-radius:3px}
+.model-panel{margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--card);overflow:hidden}
+.model-panel summary{cursor:pointer;padding:10px 12px;font-size:11px;color:var(--accent);list-style:none}
+.model-panel summary::-webkit-details-marker{display:none}
+.model-panel summary:before{content:'▸ ';color:#666}
+.model-panel[open] summary:before{content:'▾ '}
+.model-inner{padding:0 12px 12px;font-size:11px}
+.model-cmd{background:#0a0a14;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:10px;color:#7ee787;line-height:1.7;overflow-x:auto}
+.model-table{width:100%;border-collapse:collapse;font-size:10px;margin-top:4px}
+.model-table th{background:#0a0a14;color:var(--accent);text-align:left;padding:5px 6px;border:1px solid var(--border)}
+.model-table td{padding:5px 6px;border:1px solid var(--border);color:#bbb}
+.model-table a{color:var(--accent);text-decoration:none}
+.model-table a:hover{text-decoration:underline}
 .hl-h{background:#4caf5033;color:var(--g)}
 .hl-a{background:#f4433633;color:var(--r)}
 .hl-m{background:#ffc10733;color:var(--y)}
@@ -59,8 +71,8 @@ textarea:focus{border-color:var(--accent)}
 </head>
 <body>
 <div class="app">
-<h1>AIGC 文本检测 v6</h1>
-<div class="subtitle">17维 · 6大模型指纹 · 论证脚手架 · 纯本地离线</div>
+<h1>AIGC 文本检测 v8</h1>
+<div class="subtitle">17维 · 6大模型指纹 · 论证脚手架 · LLM Pro 扩展 · 纯本地离线</div>
 <textarea id="input" placeholder="粘贴文本（至少100字，越长越准）..."></textarea>
 <div class="btn-row">
   <button class="btn btn-detect" onclick="detect()">开始检测</button>
@@ -87,6 +99,25 @@ textarea:focus{border-color:var(--accent)}
   <div style="margin-top:4px"><button class="btn-sm" onclick="exportHistory()">导出</button><button class="btn-sm" onclick="clearHistory()">清空</button></div>
 </div>
 <div class="disclaimer">结果根据简易统计算法生成，仅供参考</div>
+<details class="model-panel">
+  <summary>🧠 LLM Pro 深度检测（可选扩展）— 困惑度 / 可预测率 / DetectGPT 扰动原理</summary>
+  <div class="model-inner">
+    <p style="margin-bottom:8px;color:#aaa">网页版使用 17 维统计启发式（轻量）。如需 <b style="color:#00e5ff">真困惑度 + 可预测率</b> 深度检测（GPTZero 核心原理，基于 llama.cpp），推荐使用 <b>Python 桌面版</b>（CLI/GUI），支持加载本地 GGUF 模型：</p>
+    <div class="model-cmd">pip install llama-cpp-python<br>python3 aigc_detector.py -f 文本.txt --model 模型.gguf</div>
+    <p style="margin:10px 0 6px;color:#aaa">可选模型（HuggingFace，国内用镜像 <b>hf-mirror.com</b>）：</p>
+    <table class="model-table">
+      <tr><th>模型</th><th>大小</th><th>说明</th><th>下载</th></tr>
+      <tr><td>gemma-4-E4B-it-Q4_K_M.gguf</td><td>5.3GB</td><td>Gemma4 4B 高效版（推荐，平衡）✅已验证</td><td><a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>gemma-4-E4B-it-Q6_K.gguf</td><td>6.2GB</td><td>Gemma4 4B Q6_K 更高精度 ✅已验证</td><td><a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q6_K.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>gemma-4-E4B-it-Q8_0.gguf</td><td>8.0GB</td><td>Gemma4 4B Q8_0 接近无损 ✅已验证</td><td><a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q8_0.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>qwen2.5-1.5b-instruct-q4_k_m.gguf</td><td>1.0GB</td><td>通义千问2.5 1.5B 轻量（中文优秀）</td><td><a href="https://hf-mirror.com/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>qwen2.5-3b-instruct-q4_k_m.gguf</td><td>1.9GB</td><td>通义千问2.5 3B（中文更强）</td><td><a href="https://hf-mirror.com/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>Llama-3.2-1B-Instruct-Q4_K_M.gguf</td><td>0.9GB</td><td>Meta Llama3.2 1B 轻量（英文）</td><td><a href="https://hf-mirror.com/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>Llama-3.2-3B-Instruct-Q4_K_M.gguf</td><td>2.0GB</td><td>Meta Llama3.2 3B 均衡（英文）</td><td><a href="https://hf-mirror.com/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf" target="_blank">下载</a></td></tr>
+    </table>
+    <p style="margin-top:8px;color:#666;font-size:12px">模型库: <a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF" target="_blank">lmstudio-community/gemma-4-E4B-it-GGUF</a> (Apache-2.0) · 命令行下载: <code>python3 aigc_detector.py --download-model org/repo/file.gguf</code></p>
+  </div>
+</details>
 </div>
 <script>
 
