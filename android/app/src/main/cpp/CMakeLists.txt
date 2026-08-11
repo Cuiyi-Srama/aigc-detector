@@ -61,10 +61,14 @@ set(LLAMA_CPU_SRCS
     ${LLAMA_SRC_DIR}/ggml-cpu/quants.c
 )
 
+# 模型架构实现 (models/*.cpp)
+file(GLOB LLAMA_MODELS_SRCS ${LLAMA_SRC_DIR}/models/*.cpp)
+
 add_library(llama STATIC
     ${LLAMA_CORE_SRCS}
     ${LLAMA_GGML_SRCS}
     ${LLAMA_CPU_SRCS}
+    ${LLAMA_MODELS_SRCS}
 )
 
 target_include_directories(llama PUBLIC
@@ -78,6 +82,7 @@ target_include_directories(llama PUBLIC
     ${LLAMA_SRC_DIR}/ggml-hexagon
     ${LLAMA_SRC_DIR}/common
     ${LLAMA_SRC_DIR}/nlohmann
+    ${LLAMA_SRC_DIR}/models
 )
 
 target_compile_definitions(llama PRIVATE
