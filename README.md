@@ -77,11 +77,38 @@
 - 英文文本下部分中文专属维度（语气词/主观表达等）会虚高，英文检测建议以核心维度（Burstiness/TTR/Hapax/模板）为主
 - 文本越长检测越准，建议 ≥ 300 字符
 
+## 🖥️ 跨平台版本 (Python CLI)
+
+除网页/APK 外，提供**纯 Python 跨平台版**（Linux / Windows / macOS / Android-Termux 均可运行，零依赖，仅需 Python 3.8+）：
+
+```bash
+# Linux / macOS
+python3 aigc_detector.py -f file.txt       # 检测文件
+python3 aigc_detector.py -t "文本内容"      # 直接检测文本
+echo "文本" | python3 aigc_detector.py      # 管道输入
+python3 aigc_detector.py -f file.txt --json # JSON 输出 (CI/脚本集成)
+python3 aigc_detector.py --demo             # 内置示例演示
+python3 aigc_detector.py --quiet            # 精简输出 (仅概率+判定)
+
+# Windows (PowerShell)
+py aigc_detector.py -f file.txt
+# 或打包为 exe: pip install pyinstaller && pyinstaller -F aigc_detector.py
+```
+
+**v7 跨平台版新增特性：**
+- 🇬🇧 英文语气词 / 主观表达 / 情感词库（**修复英文文本虚高误判**）
+- 🇬🇧 英文模板套话词库（Moreover / Furthermore / leverage / utilize...）
+- 🧩 英文论证脚手架检测（misconception / framework / step-by-step...）
+- 📦 `--json` 结构化输出，便于 CI 流水线 / 脚本集成
+- 🌐 自动语言识别（中/英），中文全维度检测
+
 ## 📁 项目结构
 
 ```
 aigc-detector/
-├── index.html              # 检测器（单文件，含全部逻辑）
+├── index.html              # Web 版检测器（单文件，含全部逻辑）
+├── python/
+│   └── aigc_detector.py    # Python 跨平台 CLI 版 (v7)
 ├── apk/
 │   └── AIGC-Detector-v6.apk # Android App 安装包
 └── README.md
