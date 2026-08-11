@@ -96,7 +96,13 @@ textarea:focus{border-color:var(--accent)}
 
 const AI_PATTERNS_CN = ['首先','其次','然后','最后','此外','另外','同时','与此同时','不仅如此','值得注意的是','需要指出','需要强调的是','综上所述','总之','总的来看','从整体来看','然而','因此','所以','导致','进而','从而','一方面','另一方面','换句话说','正因如此','就像前面说的','不是.*而是','从来不是','注定是','就能','即可','便能','定能','必将','无需','只需','切勿','始终','永远','绝对','完全','从根源上','从根本','核心是','关键在于','本质是','归根结底','从根本上','在.*基础上','以.*为核心'];
 
+const AI_PATTERNS_EN = ['\\bMoreover\\b','\\bFurthermore\\b','\\bAdditionally\\b','\\bIn addition\\b','\\bHowever\\b','\\bNevertheless\\b',"\\bIn today's (fast-paced|rapidly|digital)? ?world\\b",'\\bIt is important to note\\b',"\\bIt's important to note\\b",'\\bIt is worth (noting|mentioning)\\b','\\bIn conclusion\\b','\\bTo summarize\\b','\\bTo sum up\\b','\\bIn summary\\b','\\bOverall\\b','\\b(delve|unlock|harness|leverage|utilize|facilitate|optimize)\\b','\\b(crucial|essential|vital|paramount|pivotal)\\b','\\b(various|numerous|myriad|plethora|multitude)\\b','\\bgame-?changer\\b','\\bparadigm shift\\b','\\bat the end of the day\\b','\\bone might (argue|say)\\b','\\b(undoubtedly|undeniably|unquestionably)\\b','\\bnot only\\b.*\\bbut also\\b','\\bwhether\\b.*\\bor not\\b','\\bin order to\\b','\\bdue to the fact that\\b','\\ba wide range of\\b','\\bin the realm of\\b','\\bwhen it comes to\\b','\\bit should be noted\\b','\\bplays? a (crucial|vital|significant|key) role\\b','\\bimportantly\\b','\\bcrucially\\b','\\bsignificantly\\b'];
+
 const TONE_WORDS = ['啊','呢','吧','嘛','呗','啦','哦','噢','咦','哇','嘿','哎','唉','嗯','哈','呀'];
+const TONE_WORDS_EN = ['\\boh\\b','\\bwow\\b','\\bhey\\b','\\bwell\\b','\\bum\\b','\\buh\\b','\\bhmm\\b','\\byeah\\b','\\bnah\\b','\\bgosh\\b','\\boops\\b'];
+const SUBJECTIVE_WORDS_EN = ['\\bI think\\b','\\bI feel\\b','\\bI believe\\b','\\bin my opinion\\b','\\bto me\\b','\\bpersonally\\b','\\bhonestly\\b','\\bfrom my perspective\\b','\\bI guess\\b','\\bI suppose\\b'];
+const POS_WORDS_EN = ['\\bgood\\b','\\bgreat\\b','\\bnice\\b','\\blike\\b','\\bhappy\\b','\\bjoy\\b','\\bwonderful\\b','\\bexcellent\\b','\\bamazing\\b','\\blove\\b','\\bbeautiful\\b','\\bwarm\\b','\\btouching\\b','\\bsurprising\\b','\\bexcited\\b','\\bfair\\b','\\bfree\\b','\\bbetter\\b','\\bfavorite\\b'];
+const NEG_WORDS_EN = ['\\bbad\\b','\\bterrible\\b','\\bawful\\b','\\bhate\\b','\\bsad\\b','\\bpainful\\b','\\bmiserable\\b','\\bfail\\b','\\bdisappointed\\b','\\bangry\\b','\\bafraid\\b','\\bworried\\b','\\banxious\\b','\\blonely\\b','\\bcrowded\\b','\\bunsafe\\b','\\bworse\\b','\\bproblem\\b','\\bissue\\b'];
 const SUBJECTIVE_WORDS = ['我觉得','我认为','我感觉','我个人','说实话','说真的','老实说','没想到','突然发现','越来越觉得','搞不懂'];
 const ABSTRACT_WORDS = ['逻辑','规律','核心','原则','思维','意识','方式','方法','能力','技巧','策略','体系','框架','结构','机制','模式','层面','维度','角度','领域','方面','环节','步骤','流程','标准','准则','规范','底层','顶层','根源','本质','导向','认知','范式','全局观','心法','方法论','闭环','抓手','赋能','赛道','颗粒度','对齐','漏斗','壁垒','阈值','纵深'];
 
@@ -230,16 +236,18 @@ function analyze(text){
   const ttr=unique.size/words.length;
   const hapaxRatio=calcHapaxRatio(words);
 
-  const patterns=cn?AI_PATTERNS_CN:[];
+  const patterns=cn?AI_PATTERNS_CN:AI_PATTERNS_EN;
   const templateCount=countMatches(text, patterns);
   const templateDensity=templateCount/words.length;
 
   let toneCount=0;
   if(cn){for(const tw of TONE_WORDS)toneCount+=countMatches(text,[tw]);}
+  else{for(const tw of TONE_WORDS_EN)toneCount+=countMatches(text,[tw]);}
   const toneDensity=toneCount/words.length;
 
   let subjCount=0;
   if(cn)subjCount=countMatches(text, SUBJECTIVE_WORDS);
+  else subjCount=countMatches(text, SUBJECTIVE_WORDS_EN);
   const subjDensity=subjCount/words.length;
 
   const deCount=countMatches(text,['的']);
@@ -264,8 +272,8 @@ function analyze(text){
   let paraBurstiness=0;
   if(paragraphs.length>=2)paraBurstiness=calcBurstiness(paragraphs);
 
-  const posWords=['好','棒','赞','喜欢','开心','快乐','幸福','美好','优秀','精彩','厉害','不错','满意','舒服','温暖','感动','惊喜','兴奋'];
-  const negWords=['坏','差','烂','讨厌','伤心','痛苦','难过','糟糕','失败','失望','生气','愤怒','害怕','担心','焦虑','孤独','悲哀'];
+  const posWords=cn?['好','棒','赞','喜欢','开心','快乐','幸福','美好','优秀','精彩','厉害','不错','满意','舒服','温暖','感动','惊喜','兴奋']:POS_WORDS_EN;
+  const negWords=cn?['坏','差','烂','讨厌','伤心','痛苦','难过','糟糕','失败','失望','生气','愤怒','害怕','担心','焦虑','孤独','悲哀']:NEG_WORDS_EN;
   let posCnt=countMatches(text,posWords), negCnt=countMatches(text,negWords);
   const emotionDensity=(posCnt+negCnt)/words.length;
 
@@ -323,7 +331,7 @@ function analyze(text){
   else if(scaffoldStageCnt>=3)flags.push('论证脚手架'+scaffoldStageCnt+'/5阶段');
   if(quotedTerms>=10&&coinedTerms>=6)flags.push('引号'+(quotedTerms)+'处(造词'+coinedTerms+')');
   else if(coinedTerms>=5)flags.push('自创术语'+coinedTerms+'处');
-  if(toneCount===0)flags.push('零语气词');
+  if(toneCount===0)flags.push(cn?'零语气词':'zero tone words');
   if(deDensity>0.06)flags.push('的字密度'+(deDensity*100).toFixed(1)+'%');
   if(abstractRatio>0.03)flags.push('抽象堆砌'+(abstractRatio*100).toFixed(1)+'%');
   if(funcMetaphors>=3&&creativeMetaphors===0)flags.push('功能比喻'+funcMetaphors+'处');
