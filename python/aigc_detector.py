@@ -378,6 +378,7 @@ def main():
     ap = argparse.ArgumentParser(description='AIGC文本检测器 v%s (跨平台 Python 版)' % VERSION)
     ap.add_argument('-f', '--file', help='输入文本文件路径')
     ap.add_argument('-t', '--text', help='直接输入文本')
+    ap.add_argument('--dir', help='批量检测目录下所有 .txt/.md/.markdown 文件 (递归)')
     ap.add_argument('--json', action='store_true', help='JSON 格式输出')
     ap.add_argument('--quiet', action='store_true', help='精简输出(仅概率+判定)')
     ap.add_argument('--demo', action='store_true', help='运行内置示例')
@@ -395,6 +396,40 @@ def main():
             print('## 示例: %s' % name)
             print(render_text(r))
             print()
+        return
+
+    if args.dir:
+        import glob as _glob
+        import os as _os
+        files = []
+        for ext in ('*.txt', '*.md', '*.markdown'):
+            files.extend(_glob.glob(_os.path.join(args.dir, '**', ext), recursive=True))
+        if not files:
+            print('目录中未找到 .txt/.md/.markdown 文件: %s' % args.dir, file=sys.stderr)
+            sys.exit(1)
+        results = []
+        for f in sorted(files):
+            try:
+                with open(f, 'r', encoding='utf-8', errors='ignore') as fh:
+                    r = analyze(fh.read())
+                if 'error' in r:
+                    results.append((f, None, r['error']))
+                else:
+                    results.append((f, r['ai_probability'], r['level']))
+            except Exception as e:
+                results.append((f, None, str(e)))
+        if args.json:
+            print(json.dumps([{'file': f, 'ai_probability': p, 'level': l, 'error': e}
+                              for f, p, l, e in [(a, b, c, '') for a, b, c in results]
+                              if True], ensure_ascii=False, indent=2))
+        else:
+            print('%-40s %8s  %s' % ('文件', 'AI概率', '判定'))
+            print('-' * 70)
+            for f, p, l in results:
+                if p is None:
+                    print('%-40s %8s  %s' % (f, 'ERR', l))
+                else:
+                    print('%-40s %6.1f%%  %s' % (f, p, l))
         return
 
     if args.file:
