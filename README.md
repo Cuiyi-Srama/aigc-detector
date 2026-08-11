@@ -1,10 +1,48 @@
-# AIGC 文本检测器 v6 (AIGC Text Detector)
+# AIGC 文本检测器 v8 (AIGC Text Detector)
 
-> 纯本地 · 离线运行 · 17 维统计特征 + 6 大模型指纹 + 论证脚手架检测
+> 纯本地 · 离线运行 · 17 维统计特征 + 6 大模型指纹 + 论证脚手架检测 + 🧠 LLM Pro 深度引擎
 
 一个基于统计特征的 AI 生成内容（AIGC）检测工具。无需联网、无需上传文本，所有检测都在本地完成，保护隐私的同时快速判断一段文本是"人类写作"还是"AI 生成"。
 
 ---
+
+## 🧠 LLM Pro 深度检测 (v8 新增, 可选)
+
+v8 引入 **LLM Pro 引擎**：加载本地 GGUF 模型（HuggingFace 开源模型），实现 GPTZero 核心原理的真深度检测：
+
+| 指标 | 原理 | AI 文本特征 | 人类文本特征 |
+|------|------|------------|------------|
+| **困惑度 Perplexity** | 文本对语言模型的"意料程度" | 低（AI 文本在模型分布"低谷"） | 高（人类写作跳跃、意外） |
+| **top-1 可预测率** | 模型猜中下一个 token 的比例 | 高（>35%，用词可预测） | 低（<20%） |
+| **目标 token 排名** | 真实 token 在候选词中的百分位 | 靠前（<10%，意料之中） | 分散（>25%） |
+
+检测时 LLM 深度分与 17 维启发式按 **0.4 : 0.6** 融合。
+
+### 安装与使用 (Python 桌面版)
+
+```bash
+pip install llama-cpp-python        # 安装推理引擎
+python3 aigc_detector.py --list-models                # 查看可选模型
+python3 aigc_detector.py -f file.txt --model 模型.gguf  # 启用深度检测
+python3 aigc_detector.py --download-model lmstudio-community/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf  # 一键下载
+```
+
+> 国内用户默认走 `hf-mirror.com` 镜像直连；可用 `--hf-base https://huggingface.co` 切换官方源。
+> 未安装 llama-cpp-python 或未指定模型时，自动降级为 17 维启发式（原有功能不受影响）。
+
+### 可选模型 (HuggingFace)
+
+| 模型 | 大小 | 说明 | 验证 |
+|------|------|------|------|
+| [gemma-4-E4B-it-Q4_K_M.gguf](https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf) | 5.3GB | Gemma4 4B 高效版 (推荐, 中英均衡) | ✅ |
+| [gemma-4-E4B-it-Q6_K.gguf](https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q6_K.gguf) | 6.2GB | Gemma4 4B 更高精度 | ✅ |
+| [gemma-4-E4B-it-Q8_0.gguf](https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q8_0.gguf) | 8.0GB | Gemma4 4B 接近无损 | ✅ |
+| qwen2.5-1.5b-instruct-q4_k_m.gguf | 1.0GB | 通义千问2.5 1.5B (中文优秀) | |
+| qwen2.5-3b-instruct-q4_k_m.gguf | 1.9GB | 通义千问2.5 3B (中文更强) | |
+| Llama-3.2-1B-Instruct-Q4_K_M.gguf | 0.9GB | Meta Llama3.2 1B (英文轻量) | |
+| Llama-3.2-3B-Instruct-Q4_K_M.gguf | 2.0GB | Meta Llama3.2 3B (英文均衡) | |
+
+模型协议: Gemma4 为 Apache-2.0；下载链接均指向 HuggingFace（含 hf-mirror 镜像）。
 
 ## ✨ 特性
 
