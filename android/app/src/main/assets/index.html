@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>AIGC 文本检测 v8</title>
+<style>
+:root{--bg:#111;--card:#1a1a2e;--text:#e0e0e0;--accent:#00e5ff;--border:#2a2a3e;--g:#4caf50;--y:#ffc107;--o:#ff9800;--r:#f44336}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif;min-height:100vh;display:flex;justify-content:center;padding:16px}
+.app{width:100%;max-width:520px}
+h1{text-align:center;font-size:1.4rem;margin:8px 0 2px;color:var(--accent)}
+.subtitle{text-align:center;color:#666;font-size:10px;margin-bottom:10px}
+textarea{width:100%;height:140px;background:var(--card);color:var(--text);border:2px solid var(--border);border-radius:12px;padding:12px;font-size:14px;resize:vertical;outline:none;transition:border .2s;line-height:1.7}
+textarea:focus{border-color:var(--accent)}
+.btn-row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.btn{padding:10px 16px;border-radius:8px;border:none;font-size:13px;cursor:pointer;font-weight:600}
+.btn-detect{background:var(--accent);color:#000;flex:1}
+.btn-clear{background:var(--border);color:var(--text)}
+.btn-sample{background:transparent;color:var(--accent);border:1px solid var(--accent);font-size:10px;padding:5px 10px}
+.result{margin-top:12px;display:none}
+.result.show{display:block}
+.gauge-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.gauge{position:relative;width:80px;height:80px;flex-shrink:0}
+.gauge svg{transform:rotate(-90deg)}
+.gauge circle{fill:none;stroke-width:6}
+.gauge .bg{stroke:var(--border)}
+.gauge .fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset .8s,stroke .5s}
+.gauge-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;font-weight:700}
+.level-badge{padding:4px 10px;border-radius:20px;font-weight:700;font-size:12px}
+.level-human{background:#4caf5033;color:var(--g)}
+.level-maybe{background:#ffc10733;color:var(--y)}
+.level-uncertain{background:#ff980033;color:var(--o)}
+.level-likely{background:#f4433633;color:var(--r)}
+.detail-list{margin-top:6px}
+.detail-item{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border);font-size:10px}
+.detail-name{width:70px;font-weight:700;color:var(--accent);font-size:9px;flex-shrink:0}
+.detail-bar{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.detail-bar-fill{height:100%;border-radius:2px;transition:width .5s,background .5s}
+.detail-val{width:40px;text-align:right;font-weight:600;font-size:9px}
+.flag-box{background:#f4433611;border:1px solid var(--r);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:10px;color:#f88;line-height:1.5}
+.flag-box b{color:var(--r)}
+.stats{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.stat-item{background:var(--card);padding:5px 8px;border-radius:6px;font-size:10px;text-align:center}
+.stat-val{font-size:13px;font-weight:700;color:var(--accent)}
+.stat-label{color:#888;font-size:9px}
+.disclaimer{text-align:center;color:#555;font-size:9px;margin-top:12px;padding:8px;border-top:1px solid var(--border)}
+.history-box{margin-top:12px;border-top:1px solid var(--border);padding-top:8px;display:none}
+.history-box h3{font-size:11px;color:var(--accent);margin-bottom:4px}
+.history-item{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;margin:2px 0;background:var(--card);border-radius:6px;font-size:10px;cursor:pointer}
+.history-pct{font-weight:700;font-size:11px}
+.history-label{font-size:8px;padding:1px 5px;border-radius:3px}
+.model-panel{margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--card);overflow:hidden}
+.model-panel summary{cursor:pointer;padding:10px 12px;font-size:11px;color:var(--accent);list-style:none}
+.model-panel summary::-webkit-details-marker{display:none}
+.model-panel summary:before{content:'▸ ';color:#666}
+.model-panel[open] summary:before{content:'▾ '}
+.model-inner{padding:0 12px 12px;font-size:11px}
+.model-cmd{background:#0a0a14;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:10px;color:#7ee787;line-height:1.7;overflow-x:auto}
+.model-table{width:100%;border-collapse:collapse;font-size:10px;margin-top:4px}
+.model-table th{background:#0a0a14;color:var(--accent);text-align:left;padding:5px 6px;border:1px solid var(--border)}
+.model-table td{padding:5px 6px;border:1px solid var(--border);color:#bbb}
+.model-table a{color:var(--accent);text-decoration:none}
+.model-table a:hover{text-decoration:underline}
+.hl-h{background:#4caf5033;color:var(--g)}
+.hl-a{background:#f4433633;color:var(--r)}
+.hl-m{background:#ffc10733;color:var(--y)}
+.history-time{color:#666;font-size:9px}
+.btn-sm{padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:9px;cursor:pointer;margin:2px}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>AIGC 文本检测 v8</h1>
+<div class="subtitle">17维 · 6大模型指纹 · 论证脚手架 · LLM Pro 扩展 · 纯本地离线</div>
+<textarea id="input" placeholder="粘贴文本（至少100字，越长越准）..."></textarea>
+<div class="btn-row">
+  <button class="btn btn-detect" onclick="detect()">开始检测</button>
+  <button class="btn btn-clear" onclick="clearAll()">清空</button>
+</div>
+<div class="btn-row" style="gap:4px">
+  <button class="btn btn-sample" onclick="loadSample('human')">人类（背影）</button>
+  <button class="btn btn-sample" onclick="loadSample('ai')">通用AI</button>
+  <button class="btn btn-sample" onclick="loadSample('ds')">DeepSeek</button>
+  <button class="btn btn-sample" onclick="loadSample('mix')">人机混合</button>
+</div>
+<div id="llmBar" style="display:none;margin:8px 0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+    <b style="font-size:11px;color:var(--accent)">🧠 LLM Pro（本机模型）</b>
+    <span id="llmModelName" style="font-size:10px;color:#888">未选择模型</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-sample" onclick="pickLlmModel()">选择模型</button>
+    <button class="btn btn-sample" onclick="runLlmPro()">深度检测</button>
+  </div>
+  <div id="llmResult" style="font-size:10px;color:#7ee787;margin-top:6px;display:none"></div>
+</div>
+<div class="result" id="result">
+  <div class="gauge-row">
+    <div class="gauge"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" id="fg" cx="60" cy="60" r="52"/></svg><div class="gauge-text" id="pct">0%</div></div>
+    <div><span class="level-badge" id="levelBadge">-</span><div style="font-size:22px;font-weight:700;margin-top:4px" id="levelText">-</div></div>
+  </div>
+  <div class="detail-list" id="details"></div>
+  <div class="flag-box" id="flags" style="display:none"></div>
+  <div class="stats" id="stats"></div>
+</div>
+<div class="history-box" id="historyBox">
+  <h3>检测历史</h3>
+  <div id="historyList"></div>
+  <div style="margin-top:4px"><button class="btn-sm" onclick="exportHistory()">导出</button><button class="btn-sm" onclick="clearHistory()">清空</button></div>
+</div>
+<div class="disclaimer">结果根据简易统计算法生成，仅供参考</div>
+<details class="model-panel">
+  <summary>🧠 LLM Pro 深度检测（可选扩展）— 困惑度 / 可预测率 / DetectGPT 扰动原理</summary>
+  <div class="model-inner">
+    <p style="margin-bottom:8px;color:#aaa">网页版使用 17 维统计启发式（轻量）。如需 <b style="color:#00e5ff">真困惑度 + 可预测率</b> 深度检测（GPTZero 核心原理，基于 llama.cpp），推荐使用 <b>Python 桌面版</b>（CLI/GUI），支持加载本地 GGUF 模型：</p>
+    <div class="model-cmd">pip install llama-cpp-python<br>python3 aigc_detector.py -f 文本.txt --model 模型.gguf</div>
+    <p style="margin:10px 0 6px;color:#aaa">可选模型（HuggingFace，国内用镜像 <b>hf-mirror.com</b>）：</p>
+    <table class="model-table">
+      <tr><th>模型</th><th>大小</th><th>说明</th><th>下载</th></tr>
+      <tr><td>gemma-4-E4B-it-Q4_K_M.gguf</td><td>5.3GB</td><td>Gemma4 4B 高效版（推荐，平衡）✅已验证</td><td><a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>gemma-4-E4B-it-Q6_K.gguf</td><td>6.2GB</td><td>Gemma4 4B Q6_K 更高精度 ✅已验证</td><td><a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q6_K.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>gemma-4-E4B-it-Q8_0.gguf</td><td>8.0GB</td><td>Gemma4 4B Q8_0 接近无损 ✅已验证</td><td><a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q8_0.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>qwen2.5-1.5b-instruct-q4_k_m.gguf</td><td>1.0GB</td><td>通义千问2.5 1.5B 轻量（中文优秀）</td><td><a href="https://hf-mirror.com/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>qwen2.5-3b-instruct-q4_k_m.gguf</td><td>1.9GB</td><td>通义千问2.5 3B（中文更强）</td><td><a href="https://hf-mirror.com/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>Llama-3.2-1B-Instruct-Q4_K_M.gguf</td><td>0.9GB</td><td>Meta Llama3.2 1B 轻量（英文）</td><td><a href="https://hf-mirror.com/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf" target="_blank">下载</a></td></tr>
+      <tr><td>Llama-3.2-3B-Instruct-Q4_K_M.gguf</td><td>2.0GB</td><td>Meta Llama3.2 3B 均衡（英文）</td><td><a href="https://hf-mirror.com/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf" target="_blank">下载</a></td></tr>
+    </table>
+    <p style="margin-top:8px;color:#666;font-size:12px">模型库: <a href="https://hf-mirror.com/lmstudio-community/gemma-4-E4B-it-GGUF" target="_blank">lmstudio-community/gemma-4-E4B-it-GGUF</a> (Apache-2.0) · 命令行下载: <code>python3 aigc_detector.py --download-model org/repo/file.gguf</code></p>
+  </div>
+</details>
+</div>
+<script>
+
+
+
+// ============ 检测引擎 v6 ============
+
+const AI_PATTERNS_CN = ['首先','其次','然后','最后','此外','另外','同时','与此同时','不仅如此','值得注意的是','需要指出','需要强调的是','综上所述','总之','总的来看','从整体来看','然而','因此','所以','导致','进而','从而','一方面','另一方面','换句话说','正因如此','就像前面说的','不是.*而是','从来不是','注定是','就能','即可','便能','定能','必将','无需','只需','切勿','始终','永远','绝对','完全','从根源上','从根本','核心是','关键在于','本质是','归根结底','从根本上','在.*基础上','以.*为核心'];
+
+const AI_PATTERNS_EN = ['\\bMoreover\\b','\\bFurthermore\\b','\\bAdditionally\\b','\\bIn addition\\b','\\bHowever\\b','\\bNevertheless\\b',"\\bIn today's (fast-paced|rapidly|digital)? ?world\\b",'\\bIt is important to note\\b',"\\bIt's important to note\\b",'\\bIt is worth (noting|mentioning)\\b','\\bIn conclusion\\b','\\bTo summarize\\b','\\bTo sum up\\b','\\bIn summary\\b','\\bOverall\\b','\\b(delve|unlock|harness|leverage|utilize|facilitate|optimize)\\b','\\b(crucial|essential|vital|paramount|pivotal)\\b','\\b(various|numerous|myriad|plethora|multitude)\\b','\\bgame-?changer\\b','\\bparadigm shift\\b','\\bat the end of the day\\b','\\bone might (argue|say)\\b','\\b(undoubtedly|undeniably|unquestionably)\\b','\\bnot only\\b.*\\bbut also\\b','\\bwhether\\b.*\\bor not\\b','\\bin order to\\b','\\bdue to the fact that\\b','\\ba wide range of\\b','\\bin the realm of\\b','\\bwhen it comes to\\b','\\bit should be noted\\b','\\bplays? a (crucial|vital|significant|key) role\\b','\\bimportantly\\b','\\bcrucially\\b','\\bsignificantly\\b'];
+
+const TONE_WORDS = ['啊','呢','吧','嘛','呗','啦','哦','噢','咦','哇','嘿','哎','唉','嗯','哈','呀'];
+const TONE_WORDS_EN = ['\\boh\\b','\\bwow\\b','\\bhey\\b','\\bwell\\b','\\bum\\b','\\buh\\b','\\bhmm\\b','\\byeah\\b','\\bnah\\b','\\bgosh\\b','\\boops\\b'];
+const SUBJECTIVE_WORDS_EN = ['\\bI think\\b','\\bI feel\\b','\\bI believe\\b','\\bin my opinion\\b','\\bto me\\b','\\bpersonally\\b','\\bhonestly\\b','\\bfrom my perspective\\b','\\bI guess\\b','\\bI suppose\\b'];
+const POS_WORDS_EN = ['\\bgood\\b','\\bgreat\\b','\\bnice\\b','\\blike\\b','\\bhappy\\b','\\bjoy\\b','\\bwonderful\\b','\\bexcellent\\b','\\bamazing\\b','\\blove\\b','\\bbeautiful\\b','\\bwarm\\b','\\btouching\\b','\\bsurprising\\b','\\bexcited\\b','\\bfair\\b','\\bfree\\b','\\bbetter\\b','\\bfavorite\\b'];
+const NEG_WORDS_EN = ['\\bbad\\b','\\bterrible\\b','\\bawful\\b','\\bhate\\b','\\bsad\\b','\\bpainful\\b','\\bmiserable\\b','\\bfail\\b','\\bdisappointed\\b','\\bangry\\b','\\bafraid\\b','\\bworried\\b','\\banxious\\b','\\blonely\\b','\\bcrowded\\b','\\bunsafe\\b','\\bworse\\b','\\bproblem\\b','\\bissue\\b'];
+const SUBJECTIVE_WORDS = ['我觉得','我认为','我感觉','我个人','说实话','说真的','老实说','没想到','突然发现','越来越觉得','搞不懂'];
+const ABSTRACT_WORDS = ['逻辑','规律','核心','原则','思维','意识','方式','方法','能力','技巧','策略','体系','框架','结构','机制','模式','层面','维度','角度','领域','方面','环节','步骤','流程','标准','准则','规范','底层','顶层','根源','本质','导向','认知','范式','全局观','心法','方法论','闭环','抓手','赋能','赛道','颗粒度','对齐','漏斗','壁垒','阈值','纵深'];
+
+const DS_PATTERNS = ['我们不说空话','直接进入正题','我们接着','重新认识你的对手','颠覆常规','把.*彻底看透','背后的.*潜规则','最让人头疼的','终极底牌','改变一个认知','本质上不是.*而是','从来不是','记住口诀','只推一步','不多想','首尾呼应法','倒叙阅读法','定点清除','逻辑顺滑测试','最小差异法','先易后难','前后夹击','三步走','一场.*博弈战','心理博弈','信息检索战','纸老虎','牵着鼻子走','默契游戏','一场.*信心战','螺旋式上升','第一步','第二步','第三步','第四步','第五步','第一层','第二层','第三层','第四层','第一线索','第二线索','第三线索','三个核心线索','完形全局观','先破误区','建立你的','底层逻辑','彻底理顺','根深蒂固的认知','连根拔除','鹰眼','毛线团','拼图','阶梯','灯塔','祝你下笔有神','下笔有神','去实战中检验','带着.*去实战','祝你的每一笔','去考场上一试身手','带着这份从容','当.*时.*却'];
+
+const DB_PATTERNS = ['总体来说','总的来说','在.*过程中','通过.*方式','需要.*注意','应该.*考虑','可以.*看到','从.*角度','对于.*来说','在.*方面','具有.*特点','最直接','最不绕弯子','一针见血','不废话','平铺直叙','条理清晰','毫无灵魂','像.*PPT','结构规整','用词平衡','情感平滑'];
+
+const WX_PATTERNS = ['在.*的长河中','深刻地','显著地','极大地','不可或缺','至关重要','举足轻重','具有重要的','随着.*的发展','在.*背景下','引起了广泛','伴随着.*的浪潮','在.*的新时代','全面.*把握','系统.*阐述','深刻.*揭示','充分.*体现','从.*角度出发','立足于.*实际'];
+
+const KIMI_PATTERNS = ['超长上下文','长文总结','文档解析','多文档对比','无损上下文','万字以上','整本.*材料','我来帮你.*分析','让我为你.*总结','核心要点如下','梳理出.*关键'];
+
+const TY_PATTERNS = ['逻辑严密','层层递进','环环相扣','条分缕析','基于.*数据','据.*统计','根据.*报告','技术架构','实施方案','落地路径','最佳实践','显著提升','大幅降低','有效改善'];
+
+const YB_PATTERNS = ['公众号.*爆文','流量密码','读者粘性','打开率','微信生态','私域流量','社群运营','用户画像','品牌调性','内容矩阵','种草.*拔草','转化链路'];
+
+function isChinese(c){const cp=c.codePointAt(0);return (cp>=0x4e00&&cp<=0x9fff)||(cp>=0x3400&&cp<=0x4dbf)}
+function hasChinese(text){for(let c of text){if(isChinese(c))return true}return false}
+
+function tokenize(text){
+  if(hasChinese(text)){
+    try{
+      const seg=new Intl.Segmenter('zh-CN',{granularity:'word'});
+      const words=[];
+      for(let {segment,isWordLike} of seg.segment(text)){
+        const s=segment.trim();
+        if(!s)continue;
+        if(!isWordLike&&!/^[\u4e00-\u9fff]{2,}$/.test(s))continue;
+        words.push(s);
+      }
+      return words.filter(w=>!/^[^\w\u4e00-\u9fff]+$/.test(w)&&w.length>0);
+    }catch(e){}
+    return text.match(/[\u4e00-\u9fff]+|[a-zA-Z0-9]+/g)||[];
+  }
+  return text.toLowerCase().match(/[a-zA-Z0-9]+(?:'[a-zA-Z]+)?/g)||[];
+}
+
+function splitSentences(text){
+  let n=text.replace(/[。！？；]/g,m=>({'。':'.','！':'!','？':'?','；':';'}[m]));
+  return n.split(/[.!?\n;]+/).map(s=>s.trim()).filter(s=>s.length>3);
+}
+
+function splitParagraphs(text){
+  return text.split(/\n{2,}/).map(p=>p.trim()).filter(p=>p.length>10);
+}
+
+function calcBurstiness(arr){
+  if(arr.length<2)return 0;
+  const lens=arr.map(x=>x.length||x);
+  const avg=lens.reduce((a,b)=>a+b,0)/lens.length;
+  const std=Math.sqrt(lens.reduce((s,l)=>s+(l-avg)**2,0)/lens.length);
+  return avg>0?std/avg:0;
+}
+
+function calcHapaxRatio(words){
+  const freq={};
+  for(const w of words)freq[w]=(freq[w]||0)+1;
+  const unique=new Set(words);
+  let hapax=0;
+  for(const [w,c] of Object.entries(freq)){if(c===1)hapax++;}
+  return unique.size>0?hapax/unique.size:0;
+}
+
+function countMatches(text, patterns){
+  let cnt=0;
+  for(const pat of patterns){
+    try{cnt+=(text.match(new RegExp(pat,'g'))||[]).length}catch(e){}
+  }
+  return cnt;
+}
+
+// v6: 论证脚手架检测
+function detectScaffold(text, paragraphs){
+  const stages = {
+    debunk:[/很多.*误区/,/最.*误区/,/先破误区/,/第一个就是/,/依赖语感/,/见空就填/,/走一步看一步/,/只查语法/],
+    build:[/要破解/,/建立.*的/,/核心.*是/,/三步走/,/底层逻辑/,/彻底.*理顺/,/全局观/,/心法/,/不是.*而是/,/重新认识/],
+    dissect:[/第一线索/,/第二线索/,/第三线索/,/三个.*核心/,/词汇复现/,/逻辑信号/,/情感.*基调/,/归纳为/],
+    practice:[/记住/,/口诀/,/终极/,/底牌/,/最小差异法/,/逻辑.*测试/,/不要.*恋战/,/代入.*原文/],
+    elevate:[/说到底/,/就是一场/,/祝你的/,/默契.*游戏/,/你会发现/,/带着.*去/,/不再.*而是/]
+  };
+  let stageCount = 0, totalHits = 0;
+  for(const [name, pats] of Object.entries(stages)){
+    let hit = false;
+    for(const p of paragraphs){
+      for(const pat of pats){
+        if(pat.test(p)){hit=true;break;}
+      }
+      if(hit)break;
+    }
+    if(hit){stageCount++;totalHits++;}
+  }
+  return {stageCount, totalHits};
+}
+
+// v6: 精确引号检测
+function countQuotedPrecise(text){
+  const all = text.match(/[""][^""]{2,20}[""]/g) || [];
+  let coined=0, quoted=0;
+  for(const m of all){
+    const inner=m.slice(1,-1);
+    if(/^[\u4e00-\u9fff]{3,8}$/.test(inner) && !/[的是在有和与或为被把对向从以]/.test(inner)){
+      if(!/[阅读|理解|考试|高考|英语|数学|语文|文章|单词|句子|选项|答案|题目|学生|老师|学校|大学|工作|生活|学习|问题|方法|方式|能力|技巧|时间|空间|社会|经济|文化|政治|历史|科学|技术|网络|手机|电脑|软件|系统]/.test(inner)){
+        coined++;
+      }else{quoted++;}
+    }else{quoted++;}
+  }
+  return {total:all.length, coined, quoted};
+}
+
+// v6: 精确比喻检测
+function countMetaphorsPrecise(text){
+  const funcPats=[/像.*拼图/,/像.*阶梯/,/像.*灯塔/,/纸老虎/,/毛线团/,/鹰眼/,/就像.*一样/,/如同.*一般/,/是一场.*战/,/是一场.*游戏/,/是.*的阶梯/,/是.*的钥匙/];
+  const creativePats=[/像.*一样.*[甜酸苦辣]/,/仿佛.*[风雨雪雾]/,/宛如.*[花鸟虫鱼]/];
+  let func=0, creative=0;
+  for(const p of funcPats)func+=(text.match(new RegExp(p.source,'g'))||[]).length;
+  for(const p of creativePats)creative+=(text.match(new RegExp(p.source,'g'))||[]).length;
+  return {total:func+creative, functional:func, creative};
+}
+
+function analyze(text){
+  text=text.trim();
+  if(text.length<100)return {error:'文本至少需要100个字符'};
+  const cn=hasChinese(text);
+  const words=tokenize(text);
+  if(words.length<10)return {error:'词汇量太少'};
+
+  const sentences=splitSentences(text);
+  const paragraphs=splitParagraphs(text);
+
+  const burstiness=calcBurstiness(sentences);
+  const unique=new Set(words);
+  const ttr=unique.size/words.length;
+  const hapaxRatio=calcHapaxRatio(words);
+
+  const patterns=cn?AI_PATTERNS_CN:AI_PATTERNS_EN;
+  const templateCount=countMatches(text, patterns);
+  const templateDensity=templateCount/words.length;
+
+  let toneCount=0;
+  if(cn){for(const tw of TONE_WORDS)toneCount+=countMatches(text,[tw]);}
+  else{for(const tw of TONE_WORDS_EN)toneCount+=countMatches(text,[tw]);}
+  const toneDensity=toneCount/words.length;
+
+  let subjCount=0;
+  if(cn)subjCount=countMatches(text, SUBJECTIVE_WORDS);
+  else subjCount=countMatches(text, SUBJECTIVE_WORDS_EN);
+  const subjDensity=subjCount/words.length;
+
+  const deCount=countMatches(text,['的']);
+  const deDensity=deCount/words.length;
+
+  let abstractCount=0;
+  if(cn)abstractCount=countMatches(text, ABSTRACT_WORDS);
+  const abstractRatio=abstractCount/words.length;
+
+  const punctList=cn?['，','。','！','？','；','：','、','……','——']:[',','.','!','?',';',':','-'];
+  let punctTypes=0;
+  for(const p of punctList){if(text.includes(p))punctTypes++;}
+
+  let complexCnt=0;
+  for(const s of sentences){
+    const commas=(s.match(/[，;,]/g)||[]).length;
+    const conns=(s.match(/虽然|但是|因为|所以|如果|尽管|然而|因此|而且|并且|不仅|与其|不如|除非|无论|不管/g)||[]).length;
+    if(commas>=2||conns>=1)complexCnt++;
+  }
+  const complexRatio=complexCnt/sentences.length;
+
+  let paraBurstiness=0;
+  if(paragraphs.length>=2)paraBurstiness=calcBurstiness(paragraphs);
+
+  const posWords=cn?['好','棒','赞','喜欢','开心','快乐','幸福','美好','优秀','精彩','厉害','不错','满意','舒服','温暖','感动','惊喜','兴奋']:POS_WORDS_EN;
+  const negWords=cn?['坏','差','烂','讨厌','伤心','痛苦','难过','糟糕','失败','失望','生气','愤怒','害怕','担心','焦虑','孤独','悲哀']:NEG_WORDS_EN;
+  let posCnt=countMatches(text,posWords), negCnt=countMatches(text,negWords);
+  const emotionDensity=(posCnt+negCnt)/words.length;
+
+  const sectionNums=countMatches(text,[/[一二三四五六七八九十]、/g]);
+  const sectionDensity=sectionNums/words.length;
+
+  const qt=countQuotedPrecise(text);
+  const quotedTerms=qt.total;
+  const coinedTerms=qt.coined;
+  const quotedDensity=quotedTerms/words.length;
+
+  const stepPatterns=['第一步','第二步','第三步','第四步','第五步','第一层','第二层','第三层','第一线索','第二线索','第三线索'];
+  const stepCount=countMatches(text,stepPatterns);
+
+  const mt=countMetaphorsPrecise(text);
+  const metaphorCount=mt.total;
+  const funcMetaphors=mt.functional;
+  const creativeMetaphors=mt.creative;
+  const metaphorDensity=metaphorCount/words.length;
+
+  const bracketPairs=countMatches(text,[/\\([^)]{3,30}\\)/g,/（[^）]{3,30}）/g,/——[^—]{3,30}——/g]);
+  const bracketDensity=bracketPairs/words.length;
+
+  const scaffold=detectScaffold(text, paragraphs.length>0?paragraphs:[text]);
+  const scaffoldStageCnt=scaffold.stageCount;
+  const scaffoldHits=scaffold.totalHits;
+  const scaffoldDensity=scaffoldHits/Math.max(1,paragraphs.length);
+
+  const flags=[];
+  let modelBonus=0;
+
+  const dsScore=countMatches(text, DS_PATTERNS);
+  if(dsScore>=5||sectionNums>=4){flags.push('DS:分节'+sectionNums+'+指纹'+dsScore+'+脚手架'+scaffoldStageCnt+'/5');modelBonus+=22;if(scaffoldStageCnt>=4)modelBonus+=8;}
+  else if(dsScore>=3){flags.push('疑似DS:指纹'+dsScore);modelBonus+=12;}
+
+  const dbScore=countMatches(text, DB_PATTERNS);
+  if(dbScore>=5){flags.push('豆包:'+dbScore+'处直白模板');modelBonus+=12;}
+  else if(dbScore>=3){flags.push('疑似豆包:'+dbScore);modelBonus+=6;}
+
+  const wxScore=countMatches(text, WX_PATTERNS);
+  if(wxScore>=4){flags.push('文心:'+wxScore+'处华丽修饰');modelBonus+=10;}
+
+  const kimiScore=countMatches(text, KIMI_PATTERNS);
+  if(kimiScore>=4){flags.push('Kimi:'+kimiScore+'处长文特征');modelBonus+=8;}
+
+  const tyScore=countMatches(text, TY_PATTERNS);
+  if(tyScore>=4){flags.push('通义:'+tyScore+'处逻辑特征');modelBonus+=8;}
+
+  const ybScore=countMatches(text, YB_PATTERNS);
+  if(ybScore>=4){flags.push('元宝:'+ybScore+'处运营特征');modelBonus+=8;}
+
+  if(sectionNums>=3)flags.push('数字分节'+sectionNums+'处');
+  if(stepCount>=3)flags.push('步骤/层次结构'+stepCount+'处');
+  if(scaffoldStageCnt>=4)flags.push('完整论证脚手架'+scaffoldStageCnt+'/5阶段');
+  else if(scaffoldStageCnt>=3)flags.push('论证脚手架'+scaffoldStageCnt+'/5阶段');
+  if(quotedTerms>=10&&coinedTerms>=6)flags.push('引号'+(quotedTerms)+'处(造词'+coinedTerms+')');
+  else if(coinedTerms>=5)flags.push('自创术语'+coinedTerms+'处');
+  if(toneCount===0)flags.push(cn?'零语气词':'zero tone words');
+  if(deDensity>0.06)flags.push('的字密度'+(deDensity*100).toFixed(1)+'%');
+  if(abstractRatio>0.03)flags.push('抽象堆砌'+(abstractRatio*100).toFixed(1)+'%');
+  if(funcMetaphors>=3&&creativeMetaphors===0)flags.push('功能比喻'+funcMetaphors+'处');
+  if(bracketPairs>=3)flags.push('括号嵌套'+bracketPairs+'处');
+
+  function clamp(v){return Math.max(0,Math.min(100,v))}
+
+  const scores={
+    burstiness:{raw:burstiness, aiScore:clamp((1-burstiness/0.55)*100), w:12, n:'句子突发性'},
+    ttr:{raw:ttr, aiScore:clamp((1-ttr/0.6)*100), w:7, n:'词汇多样性'},
+    hapax:{raw:hapaxRatio, aiScore:clamp((1-hapaxRatio/0.65)*100), w:8, n:'罕见词比例'},
+    template:{raw:templateDensity, aiScore:clamp(templateDensity/0.06*100), w:14, n:'模板套话'},
+    tone:{raw:toneDensity, aiScore:clamp((1-toneDensity/0.012)*100), w:9, n:'语气词缺失'},
+    subj:{raw:subjDensity, aiScore:clamp((1-subjDensity/0.008)*100), w:5, n:'主观表达'},
+    deDensity:{raw:deDensity, aiScore:clamp((deDensity-0.03)/0.05*100), w:7, n:'的密度'},
+    abstract:{raw:abstractRatio, aiScore:clamp(abstractRatio/0.04*100), w:6, n:'抽象概念'},
+    punct:{raw:punctTypes, aiScore:clamp((1-punctTypes/9)*100), w:4, n:'标点多样性'},
+    complex:{raw:complexRatio, aiScore:clamp((1-complexRatio/0.6)*100), w:5, n:'句式复杂度'},
+    para:{raw:paraBurstiness, aiScore:clamp((1-paraBurstiness/0.55)*100), w:5, n:'段落均匀度'},
+    emotion:{raw:emotionDensity, aiScore:clamp((1-emotionDensity/0.035)*100), w:4, n:'情感表达'},
+    section:{raw:sectionDensity, aiScore:clamp(sectionDensity/0.015*100), w:8, n:'数字分节'},
+    quoted:{raw:quotedDensity, aiScore:clamp(quotedDensity/0.02*100), w:6, n:'引号术语'},
+    metaphor:{raw:metaphorDensity, aiScore:clamp(metaphorDensity/0.015*100), w:5, n:'比喻密度'},
+    scaffold:{raw:scaffoldDensity, aiScore:clamp(scaffoldStageCnt/5*100), w:5, n:'论证脚手架'},
+    bracket:{raw:bracketDensity, aiScore:clamp(bracketDensity/0.008*100), w:4, n:'括号嵌套'}
+  };
+
+  let tw=0,ws=0;
+  const details=[];
+  for(const [key,{raw,aiScore,w,n}] of Object.entries(scores)){
+    ws+=aiScore*w; tw+=w;
+    details.push({key,name:n,raw,aiScore:Math.round(aiScore*10)/10,weight:w});
+  }
+
+  let aiProbability=tw>0?Math.round(ws/tw*10)/10:50;
+  aiProbability=Math.min(100, aiProbability+modelBonus*0.5);
+
+  let level;
+  if(aiProbability<25)level='Human';
+  else if(aiProbability<40)level='Maybe AI';
+  else if(aiProbability<60)level='Uncertain';
+  else if(aiProbability<80)level='Likely AI';
+  else level='Very Likely AI';
+
+  return {
+    aiProbability,level,language:cn?'zh':'en',details,flags,
+    stats:{chars:text.length,words:words.length,unique:unique.size,
+      sentences:sentences.length,paragraphs:paragraphs.length,
+      toneWords:toneCount,templates:templateCount,deCount,abstractCount,
+      sectionNums,quotedTerms,stepCount,
+      coinedTerms,metaphorCount,bracketPairs,scaffoldStageCnt}
+  };
+}
+
+// ============ UI ============
+
+const SAMPLES={
+  human:'我与父亲不相见已二年余了，我最不能忘记的是他的背影。那年冬天，祖母死了，父亲的差使也交卸了，正是祸不单行的日子，我从北京到徐州，打算跟着父亲奔丧回家。到徐州见着父亲，看见满院狼藉的东西，又想起祖母，不禁簌簌地流下眼泪。父亲说："事已如此，不必难过，好在天无绝人之路！"回家变卖典质，父亲还了亏空；又借钱办了丧事。这些日子，家中光景很是惨淡，一半为了丧事，一半为了父亲赋闲。丧事完毕，父亲要到南京谋事，我也要回北京念书，我们便同行。到南京时，有朋友约去游逛，勾留了一日；第二日上午便须渡江到浦口，下午上车北去。父亲因为事忙，本已说定不送我，叫旅馆里一个熟识的茶房陪我同去。他再三嘱咐茶房，甚是仔细。但他终于不放心，怕茶房不妥帖；颇踌躇了一会。其实我那年已二十岁，北京已来往过两三次，是没有什么要紧的了。他踌躇了一会，终于决定还是自己送我去。我再三劝他不必去；他只说："不要紧，他们去不好！"我们过了江，进了车站。我买票，他忙着照看行李。行李太多了，得向脚夫行些小费才可过去。他便又忙着和他们讲价钱。我那时真是聪明过分，总觉他说话不大漂亮，非自己插嘴不可，但他终于讲定了价钱；就送我上车。他给我拣定了靠车门的一张椅子；我将他给我做的紫毛大衣铺好座位。他嘱我路上小心，夜里要警醒些，不要受凉。又嘱托茶房好好照应我。我心里暗笑他的迂；他们只认得钱，托他们只是白托！而且我这样大年纪的人，难道还不能料理自己么？唉，我现在想想，那时真是太聪明了！',
+  ai:'高考英语阅读理解作为整张试卷分值占比最高的板块，是考生提分的关键突破口。根据历年高考命题规律，阅读理解失分的核心原因并非词汇量不足，而是缺乏针对性的解题策略。首先，考生需要明确一个核心原则：所有的正确答案均来源于原文的同义替换。命题人遵循固定的出题套路，所有干扰项都可以通过"无中生有""偷换概念""以偏概全"三大陷阱进行分类识别。其次，考场上必须采用"先题后文、精准定位"的答题顺序，这是经过大量实证研究验证的最优策略。考生在拿到试卷后，应当先用30秒快速浏览题目和选项，圈画出关键词，然后回到文章中按照关键词进行定位。在此过程中，需要特别注意转折词、因果词、举例词等逻辑信号，这些信号词往往直接指向正确答案所在的位置。此外，针对主旨大意题，考生应重点关注文章首段、尾段以及各段首句，这些位置通常包含文章的核心论点。对于细节理解题，应当严格遵循"定位-比对-排除"三步法，避免主观臆断。最后，长期坚持系统化的解题训练，结合定期的错题复盘，能够在短时间内显著提升阅读理解的正确率和答题速度。值得注意的是，整个过程中需要保持稳定的心态，避免因个别生词而产生不必要的焦虑。',
+  ds:'我们不说空话，直接进入正题，把高考英语阅读理解这个"纸老虎"彻底拆开来看。一、重新认识你的对手。很多同学对阅读理解有一个根深蒂固的误解：以为考的就是英语水平。但本质上，高考阅读理解不是一场"英语水平测试"，而是一场"信息检索与逻辑推理游戏"。命题老师的任务，是在有限的篇幅内设计出能区分考生思维层级的题目。换句话说，你不需要认识每一个单词，也不需要完全读懂每一句话——你需要的是精准定位信息、排除干扰项、做出逻辑判断的能力。二、颠覆常规的解题顺序。绝大多数同学的做题习惯是从头到尾读完文章再做题。这个方法最大的问题是：你不知道题目问什么，所以你看文章的时候没有焦点。我强烈建议你采用"倒叙阅读法"：第一步，用30秒闪电扫描文章首尾段和各段首句，快速建立文章框架；第二步，直接阅读所有题目和选项，圈出每个问题的"题眼"；第三步，带着这些"题眼"回到文章，像拿着导航地图一样精准定位答案区域。这个方法的核心思想是：让题目指挥你的阅读，而不是让文章牵着你的鼻子走。三、选项背后的"潜规则"。高考阅读的干扰项设计有一套固定的公式。最常见的是"偷梁换柱"，就是把原文的某个关键词替换成近义但含义不同的词。其次是"无中生有"，选项中出现原文根本没有提及的信息。当你排除到只剩两个选项时，请记住一个口诀："只推一步，不多想"。正确答案一定是原文信息的直接、合理推断。四、两个终极底牌。第一张底牌是"主旨为王"——当你遇到任何不确定的题目时，先问自己这篇文章的核心论点是什么。第二张底牌是"客观大于主观"——正确答案永远是客观的、可以在原文找到依据的。好了，带着这套方法论去实战吧。记住，高考阅读不是考你英语多好，而是考你逻辑多强。祝你下笔有神。',
+  mix:'我家的后面有一个很大的园，相传叫作百草园。总的来说，这是我童年时期最核心的乐园。不必说碧绿的菜畦，光滑的石井栏，高大的皂荚树，紫红的桑椹；也不必说鸣蝉在树叶里长吟，肥胖的黄蜂伏在菜花上，轻捷的叫天子忽然从草间直窜向云霄里去了。值得注意的是，单是周围的短短的泥墙根一带，就有无限趣味。首先，油蛉在这里低唱，蟋蟀们在这里弹琴，这充分体现了自然界生物的多样性。其次，翻开断砖来，有时会遇见蜈蚣；还有斑蝥，倘若用手指按住它的脊梁，便会拍的一声从后窍喷出一阵烟雾——从物理学角度来看，这是一种典型的自我保护机制。何首乌藤和木莲藤缠络着，木莲有莲房一般的果实，何首乌有拥肿的根。据民间传说，何首乌根若呈人形，吃了便可以成仙，从科学角度分析这当然缺乏依据，但确实反映了当时民众对自然的朴素认知。如果不怕刺，还可以摘到覆盆子，像小珊瑚珠攒成的小球，又酸又甜，色味都比桑椹要好得远。总之，百草园虽只是荒园，但在儿童的视角下，却是一个充满无限可能的世界。',
+};
+
+const $=id=>document.getElementById(id);
+
+function loadSample(type){$('input').value=SAMPLES[type]}
+function clearAll(){$('input').value='';$('result').classList.remove('show')}
+
+function detect(){
+  try{
+  const inputEl=document.getElementById('input');
+  if(!inputEl){alert('cannot find input');return;}
+  const text=inputEl.value;
+  if(!text.trim()){alert('please enter text');return;}
+  const r=analyze(text);
+  if(r.error){alert(r.error);return}
+  $('result').classList.add('show');
+  const p=r.aiProbability;
+  const circ=2*Math.PI*52;
+  $('fg').setAttribute('stroke-dashoffset',circ*(1-p/100));
+  const colors=['#4caf50','#ffc107','#ff9800','#f44336','#f44336'];
+  const ci=p<25?0:p<40?1:p<60?2:p<80?3:4;
+  $('fg').setAttribute('stroke',colors[ci]);
+  $('pct').textContent=p+'%';
+  $('pct').style.color=colors[ci];
+  const b=$('levelBadge');
+  b.textContent=r.level;
+  b.className='level-badge '+(r.level==='Human'?'level-human':r.level.includes('Maybe')?'level-maybe':r.level==='Uncertain'?'level-uncertain':'level-likely');
+  $('levelText').textContent=r.level==='Human'?'人类写作':r.level.includes('Maybe')?'可能含AI':r.level==='Uncertain'?'不确定':'AI生成';
+
+  $('details').innerHTML=r.details.map(d=>{
+    const c=d.aiScore<30?'#4caf50':d.aiScore<55?'#ffc107':d.aiScore<75?'#ff9800':'#f44336';
+    return '<div class="detail-item"><div class="detail-name">'+d.name+'</div><div class="detail-bar"><div class="detail-bar-fill" style="width:'+d.aiScore+'%;background:'+c+'"></div></div><div class="detail-val">'+d.aiScore+'%</div></div>';
+  }).join('');
+
+  const fb=$('flags');
+  if(r.flags.length>0){
+    fb.style.display='block';
+    fb.innerHTML='<b>检测到以下特征：</b><br>'+r.flags.map(f=>'\u2022 '+f).join('<br>');
+  }else{fb.style.display='none'}
+
+  $('stats').innerHTML=
+    '<div class="stat-item"><div class="stat-val">'+r.stats.chars+'</div><div class="stat-label">字符</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+r.stats.words+'</div><div class="stat-label">分词</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+r.stats.toneWords+'</div><div class="stat-label">语气词</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+r.stats.templates+'</div><div class="stat-label">套话</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+r.stats.sectionNums+'</div><div class="stat-label">分节</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+r.stats.quotedTerms+'</div><div class="stat-label">引号</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+(r.stats.coinedTerms||0)+'</div><div class="stat-label">造词</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+(r.stats.scaffoldStageCnt||0)+'/5</div><div class="stat-label">脚手架</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+(r.stats.metaphorCount||0)+'</div><div class="stat-label">比喻</div></div>'+
+    '<div class="stat-item"><div class="stat-val">'+(r.language==='zh'?'中':'EN')+'</div><div class="stat-label">语言</div></div>';
+
+    saveHistory(r);
+  }catch(e){
+    alert('检测出错: '+e.message);
+  }
+}
+
+// ============ 历史记录 (localStorage) ============
+const HK='aigc_hist_v3';
+
+function saveHistory(r){
+  let h=[];
+  try{h=JSON.parse(localStorage.getItem(HK)||'[]')}catch(e){}
+  h.unshift({time:new Date().toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),pct:r.aiProbability,level:r.level,chars:r.stats.chars,text:$('input').value.slice(0,50)});
+  if(h.length>10)h=h.slice(0,10);
+  try{localStorage.setItem(HK,JSON.stringify(h))}catch(e){}
+  renderHistory();
+}
+
+function renderHistory(){
+  let h=[];
+  try{h=JSON.parse(localStorage.getItem(HK)||'[]')}catch(e){}
+  const bx=$('historyBox');
+  if(h.length===0){bx.style.display='none';return}
+  bx.style.display='block';
+  $('historyList').innerHTML=h.map((x,i)=>{
+    const cl=x.pct<25?'hl-h':x.pct<60?'hl-m':'hl-a';
+    const cc=x.pct<25?'var(--g)':x.pct<60?'var(--y)':'var(--r)';
+    return '<div class="history-item" onclick="loadHist('+i+')"><span class="history-pct" style="color:'+cc+'">'+x.pct+'%</span><span class="history-label '+cl+'">'+x.level+'</span><span style="flex:1;margin:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+x.text+'</span><span class="history-time">'+x.time+'</span></div>';
+  }).join('');
+}
+
+function loadHist(i){
+  let h=[];
+  try{h=JSON.parse(localStorage.getItem(HK)||'[]')}catch(e){}
+  if(h[i]){$('input').value=h[i].text;detect()}
+}
+
+function clearHistory(){localStorage.removeItem(HK);$('historyBox').style.display='none'}
+
+function exportHistory(){
+  let h=[];
+  try{h=JSON.parse(localStorage.getItem(HK)||'[]')}catch(e){}
+  let t='AIGC检测历史\n'+'='.repeat(30)+'\n';
+  for(const x of h)t+='['+x.time+'] '+x.pct+'% '+x.level+' ('+x.chars+'字)\n';
+  const b=new Blob([t],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);
+  a.download='aigc_history_'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click();
+}
+
+window.addEventListener('load',renderHistory);
+
+// ============ v8: LLM Pro 本机引擎 (APK WebView 桥) ============
+(function(){
+  if (window.AndroidBridge) {
+    var bar = document.getElementById('llmBar');
+    if (bar) bar.style.display = 'block';
+  }
+  window.__llmModelName = function(name){
+    var el = document.getElementById('llmModelName');
+    if (el) el.textContent = name;
+  };
+})();
+
+function pickLlmModel(){
+  if (window.AndroidBridge) AndroidBridge.pickModel();
+}
+
+function runLlmPro(){
+  var box = document.getElementById('llmResult');
+  var txt = document.getElementById('input').value.trim();
+  if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
+  if (txt.length < 100) { alert('文本至少需要100字符'); return; }
+  if (!AndroidBridge.hasModel()) { alert('请先选择 GGUF 模型文件'); return; }
+  box.style.display = 'block';
+  box.textContent = '⏳ LLM 推理中... (4B模型约1-3分钟, 请勿退出)';
+  window.__llmResult = function(result, error){
+    if (error) { box.textContent = '❌ ' + error; return; }
+    var p = result.split('|');
+    var ppl = parseFloat(p[0]), score = parseFloat(p[1]);
+    box.textContent = '✅ 困惑度=' + ppl.toFixed(2) + ' · LLM深度分=' + score.toFixed(1) + ' (Gemma-4B Q4)';
+    var r = detectResult;
+    if (r) {
+      r.ai_probability = Math.round((0.6 * r.ai_probability + 0.4 * score) * 10) / 10;
+      renderResult(r);
+      box.textContent += ' | 融合后 AI 概率: ' + r.ai_probability + '%';
+    }
+  };
+  AndroidBridge.analyze(txt);
+}
+
+</script>
+</body>
+</html>

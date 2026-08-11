@@ -1,0 +1,17 @@
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/.idea/
+*.keystore
+*.jks
+
+# Python
+__pycache__/
+*.pyc
+
+# Misc
+.DS_Store
+*.log
