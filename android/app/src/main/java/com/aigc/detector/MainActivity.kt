@@ -116,11 +116,17 @@ class MainActivity : Activity() {
             busy = true
             Thread {
                 try {
-                    val r = LlmProRunner.analyze(this@MainActivity, p, text)
+                    val ok = LlmProEngine.nativeInit(p)
+                    if (!ok) {
+                        notifyJs("", "模型加载失败，请确认 GGUF 文件有效")
+                        return@Thread
+                    }
+                    val r = LlmProEngine.analyze(text)
                     if (r == null) {
-                        notifyJs("", "推理失败或未解析到PPL")
+                        notifyJs("", "推理失败或文本过短")
                     } else {
-                        notifyJs(String.format("%.1f|%.1f|%d", r.ppl, r.llmScore, r.tokens), "")
+                        notifyJs(String.format("%.1f|%.3f|%.3f|%.1f|%d",
+                            r.ppl, r.predRate, r.rankPct, r.llmScore, r.tokens), "")
                     }
                 } catch (e: Throwable) {
                     notifyJs("", e.message ?: "未知错误")
