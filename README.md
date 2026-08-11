@@ -121,3 +121,20 @@ aigc-detector/
 ---
 
 *Made with ❤️ for students & writers who want their words to sound human.*
+
+## 🖼️ GUI 桌面版
+
+提供 tkinter 图形界面（跨平台，零额外依赖）：
+
+```bash
+python3 aigc_gui.py          # 直接运行 GUI
+```
+
+或使用打包脚本生成免 Python 环境的可执行文件：
+
+- Windows: 双击 `build_windows.bat` → 生成 `dist/AIGC-Detector-v7.exe`
+- Linux/macOS: `bash build_linux.sh` → 生成 `dist/AIGC-Detector-v7`
+
+## 🌐 在线版 (GitHub Pages)
+
+无需下载，浏览器直接使用：https://cuiyi-srama.github.io/aigc-detector/
