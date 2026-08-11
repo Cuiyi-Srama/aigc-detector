@@ -43,6 +43,7 @@ set(LLAMA_GGML_SRCS
     ${LLAMA_SRC_DIR}/ggml.c
     ${LLAMA_SRC_DIR}/ggml-alloc.c
     ${LLAMA_SRC_DIR}/ggml-backend.cpp
+    ${LLAMA_SRC_DIR}/ggml-backend-reg.cpp
     ${LLAMA_SRC_DIR}/ggml-opt.cpp
     ${LLAMA_SRC_DIR}/ggml-quants.c
     ${LLAMA_SRC_DIR}/ggml-threading.cpp
