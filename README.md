@@ -89,6 +89,7 @@ echo "文本" | python3 aigc_detector.py      # 管道输入
 python3 aigc_detector.py -f file.txt --json # JSON 输出 (CI/脚本集成)
 python3 aigc_detector.py --demo             # 内置示例演示
 python3 aigc_detector.py --quiet            # 精简输出 (仅概率+判定)
+python3 aigc_detector.py --dir ./docs       # 批量检测目录 (递归 .txt/.md)
 
 # Windows (PowerShell)
 py aigc_detector.py -f file.txt
