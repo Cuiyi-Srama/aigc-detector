@@ -10,8 +10,8 @@ android {
         applicationId "com.aigc.detector"
         minSdk 26
         targetSdk 34
-        versionCode 11
-        versionName "8.0.3"
+        versionCode 12
+        versionName "8.0.4"
         ndk {
             abiFilters 'arm64-v8a'
         }

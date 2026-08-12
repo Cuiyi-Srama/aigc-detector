@@ -59,11 +59,20 @@ Java_com_aigc_detector_LlmProEngine_nativeUnload(JNIEnv *, jobject) {
 }
 
 // 返回 double[5]: {ppl, pred_rate, rank_pct, llm_score, tokens}
+// progress: Java 回调对象 (实现 onProgress(int done, int total)), 可为 null
 extern "C" JNIEXPORT jdoubleArray JNICALL
-Java_com_aigc_detector_LlmProEngine_nativeAnalyze(JNIEnv * env, jobject, jstring text) {
+Java_com_aigc_detector_LlmProEngine_nativeAnalyze(JNIEnv * env, jobject, jstring text, jobject progress) {
     double zeros[5] = {0, 0, 0, 0, 0};
     jdoubleArray arr = env->NewDoubleArray(5);
     if (!g_model || !g_ctx || g_n_vocab <= 0) { env->SetDoubleArrayRegion(arr, 0, 5, zeros); return arr; }
+
+    // 进度回调准备
+    jmethodID onProgress = nullptr;
+    if (progress != nullptr) {
+        jclass cls = env->GetObjectClass(progress);
+        onProgress = env->GetMethodID(cls, "onProgress", "(II)V");
+        if (onProgress == nullptr) { env->ExceptionClear(); }
+    }
 
     const char * t = env->GetStringUTFChars(text, nullptr);
     if (!t) { env->SetDoubleArrayRegion(arr, 0, 5, zeros); return arr; }
@@ -105,6 +114,12 @@ Java_com_aigc_detector_LlmProEngine_nativeAnalyze(JNIEnv * env, jobject, jstring
             return arr;
         }
         llama_batch_free(batch);
+
+        // 进度回调: 每批完成后通知 Java
+        if (onProgress != nullptr) {
+            env->CallVoidMethod(progress, onProgress, off + bn, n);
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
 
         for (int i = 0; i < bn; i++) {
             const float * lg = llama_get_logits_ith(g_ctx, i);

@@ -79,10 +79,13 @@ textarea:focus{border-color:var(--accent)}
   <button class="btn btn-clear" onclick="clearAll()">清空</button>
 </div>
 <div class="btn-row" style="gap:4px">
-  <button class="btn btn-sample" onclick="loadSample('human')">人类（背影）</button>
-  <button class="btn btn-sample" onclick="loadSample('ai')">通用AI</button>
-  <button class="btn btn-sample" onclick="loadSample('ds')">DeepSeek</button>
-  <button class="btn btn-sample" onclick="loadSample('mix')">人机混合</button>
+  <button class="btn btn-sample" onclick="loadSample('human')">📝范文·人类（背影）</button>
+  <button class="btn btn-sample" onclick="loadSample('ai')">📝范文·通用AI</button>
+  <button class="btn btn-sample" onclick="loadSample('ds')">📝范文·DeepSeek</button>
+  <button class="btn btn-sample" onclick="loadSample('mix')">📝范文·人机混合</button>
+</div>
+<div style="font-size:9px;color:#666;margin-bottom:6px;padding:4px 8px;border-left:2px solid var(--border)">
+  📝 以上为<b>范文样例</b>：点击可载入示例文本，仅用于对比查看检测器对不同写作风格的反应，<b>不代表对任何文章/作者的判定</b>
 </div>
 <div id="llmBar" style="display:none;margin:8px 0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -90,7 +93,10 @@ textarea:focus{border-color:var(--accent)}
     <span id="llmModelName" style="font-size:10px;color:#888">未选择模型</span>
     <span style="flex:1"></span>
     <button class="btn btn-sample" onclick="pickLlmModel()">🔍 扫描模型</button>
-    <button class="btn btn-sample" onclick="runLlmPro()">深度检测</button>
+    <button class="btn btn-sample" onclick="runLlmPro()" style="border-color:var(--accent);color:var(--accent);font-weight:700">⚡ 深度检测</button>
+  </div>
+  <div id="llmReadyTip" style="display:none;margin-top:6px;padding:6px 8px;border:1px solid var(--g);border-radius:6px;background:#4caf5011;font-size:10px;color:#7ee787">
+    ✅ 模型已就绪！点击 <b>⚡深度检测</b> 将使用本机大模型（真困惑度/可预测率），结果自动融合进下方检测报告
   </div>
   <div id="llmPermWarn" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--o);border-radius:6px;background:#ff980011;font-size:10px;color:#ffb74d">
     ⚠️ 需要「所有文件访问」权限才能读取模型文件
@@ -497,6 +503,12 @@ function detect(){
     '<div class="stat-item"><div class="stat-val">'+(r.language==='zh'?'中':'EN')+'</div><div class="stat-label">语言</div></div>';
 
     window.detectResult = r;
+    // 已选模型时引导 LLM 融合
+    if (window.AndroidBridge && AndroidBridge.hasModel()) {
+      var lb = document.getElementById('llmResult');
+      lb.style.display = 'block';
+      lb.textContent = 'ℹ️ 基础检测完成。已就绪模型，可点击上方「⚡深度检测」融合 LLM 真困惑度结果（1-3分钟）';
+    }
     saveHistory(r);
   }catch(e){
     alert('检测出错: '+e.message);
@@ -562,6 +574,15 @@ window.addEventListener('load',renderHistory);
   window.__llmModelName = function(name){
     var el = document.getElementById('llmModelName');
     if (el) el.textContent = name;
+    var tip = document.getElementById('llmReadyTip');
+    if (tip) tip.style.display = 'block';
+  };
+  window.__llmProgress = function(done, total){
+    var box = document.getElementById('llmResult');
+    if (!box) return;
+    var pct = total > 0 ? Math.round(done / total * 100) : 0;
+    box.style.display = 'block';
+    box.textContent = '⏳ LLM 推理中... ' + pct + '% (' + done + '/' + total + ' tokens)';
   };
   window.__permChanged = function(ok){
     var w = document.getElementById('llmPermWarn');

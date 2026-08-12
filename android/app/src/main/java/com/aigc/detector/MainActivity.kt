@@ -271,7 +271,12 @@ class MainActivity : Activity() {
                         notifyJs("", "模型加载失败，请确认 GGUF 文件有效")
                         return@Thread
                     }
-                    val r = LlmProEngine.analyze(text)
+                    val r = LlmProEngine.analyze(text) { done, total ->
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "window.__llmProgress && window.__llmProgress($done,$total);", null)
+                        }
+                    }
                     if (r == null) {
                         notifyJs("", "推理失败或文本过短")
                     } else {
