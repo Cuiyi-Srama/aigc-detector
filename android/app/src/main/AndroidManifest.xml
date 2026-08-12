@@ -8,6 +8,7 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="AIGC 文本检测"
         android:supportsRtl="true"
         android:requestLegacyExternalStorage="true"

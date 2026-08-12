@@ -1,20 +1,29 @@
 package com.aigc.detector
+
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.JavascriptInterface
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.util.ArrayDeque
+
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private var modelPath: String? = null
     private var busy = false
+    private var permGuided = false
 
     companion object {
         private const val REQ_MODEL = 1001
@@ -22,24 +31,63 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         webView = WebView(this)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.allowFileAccess = true
         webView.settings.allowContentAccess = true
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                return false
-            }
-        }
+        webView.webViewClient = object : WebViewClient() {}
         webView.addJavascriptInterface(JsBridge(), "AndroidBridge")
         setContentView(webView)
         webView.loadUrl("file:///android_asset/index.html")
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    override fun onResume() {
+        super.onResume()
+        // 从权限设置页返回时: 通知 JS 刷新权限状态
+        if (::webView.isInitialized) {
+            val ok = hasAllFilesAccess()
+            runOnUiThread {
+                webView.evaluateJavascript("window.__permChanged && window.__permChanged($ok);", null)
+            }
+        }
+        // 首次启动权限引导 (只弹一次)
+        if (!permGuided && !hasAllFilesAccess()) {
+            permGuided = true
+            showPermissionGuide()
+        }
+    }
+
+    private fun hasAllFilesAccess(): Boolean =
+        Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()
+
+    private fun showPermissionGuide() {
+        runOnUiThread {
+            try {
+                AlertDialog.Builder(this)
+                    .setTitle("需要「所有文件访问」权限")
+                    .setMessage("本应用需要读取手机存储中的 GGUF 大模型文件（如 Models/ 目录下的模型）。\n\n点击「去开启」→ 打开「允许访问所有文件」→ 返回应用即可扫描模型。")
+                    .setCancelable(false)
+                    .setPositiveButton("去开启") { _, _ -> requestAllFilesAccess() }
+                    .setNegativeButton("稍后再说") { _, _ -> }
+                    .show()
+            } catch (_: Throwable) {}
+        }
+    }
+
+    /** 引导开启「所有文件访问」权限 (Android 11+) */
+    private fun requestAllFilesAccess() {
+        try {
+            startActivity(Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")))
+        } catch (_: Throwable) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            } catch (_: Throwable) {
+                toast("请手动到 设置→应用→AIGC 文本检测→权限 中开启「所有文件访问」")
+            }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -47,58 +95,146 @@ class MainActivity : Activity() {
         if (requestCode == REQ_MODEL && resultCode == Activity.RESULT_OK) {
             val uri: Uri? = data?.data
             if (uri != null) {
-                modelPath = resolvePath(uri)
-                if (modelPath == null) {
-                    toast("无法解析该文件路径")
+                val p = resolvePath(uri)
+                if (p == null) {
+                    toast("无法解析该文件路径，请改用「扫描模型」")
                     return
                 }
-                val f = File(modelPath!!)
-                if (!f.canRead()) {
+                if (!setModelPathInternal(p)) {
                     toast("无读取权限，请开启「所有文件访问」后重试")
                     requestAllFilesAccess()
-                    modelPath = null
                     return
                 }
-                toast("已选择模型: ${f.name} (${f.length() / 1073741824.0}GB)")
-                runOnUiThread {
-                    webView.evaluateJavascript(
-                        "window.__llmModelName && window.__llmModelName('${f.name}');", null)
-                }
+                notifyModelChosen(File(p).name)
             }
         }
     }
 
-    /** 解析 SAF 的 content:// 为真实路径 (支持任意主存储目录, 如 /Models/) */
-    private fun resolvePath(uri: Uri): String? {
-        return try {
-            val seg = uri.lastPathSegment ?: return null
-            // 格式: primary:Models/gemma-xxx.gguf 或 primary:Download/xxx.gguf
-            val path = seg.removePrefix("primary:")
-            val f = File("/storage/emulated/0/$path")
-            if (f.exists()) f.absolutePath else null
-        } catch (_: Throwable) { null }
+    private fun setModelPathInternal(path: String): Boolean {
+        val f = File(path)
+        if (!f.exists() || !f.isFile || !path.endsWith(".gguf", ignoreCase = true)) return false
+        if (!f.canRead()) return false
+        modelPath = f.absolutePath
+        return true
     }
 
-    /** 引导开启「所有文件访问」权限 (Android 11+) */
-    private fun requestAllFilesAccess() {
-        try {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:$packageName"))
-            startActivity(intent)
-        } catch (_: Throwable) {
-            try {
-                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-            } catch (_: Throwable) { }
+    private fun notifyModelChosen(name: String) {
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "window.__llmModelName && window.__llmModelName('${name.replace("'", "\\'")}');", null)
         }
     }
+
+    /** 解析 SAF 的 content:// 为真实路径 (多重兜底) */
+    private fun resolvePath(uri: Uri): String? {
+        // 1) primary: 格式 (标准 ExternalStorageProvider)
+        uri.lastPathSegment?.let { seg ->
+            val path = seg.removePrefix("primary:")
+            val f = File("/storage/emulated/0/$path")
+            if (f.exists() && f.isFile) return f.absolutePath
+        }
+        // 2) 通过 DISPLAY_NAME 全盘搜索同名文件 (vivo 等私有 provider)
+        val name = queryDisplayName(uri) ?: return null
+        return findFileByName(name)
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = try {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (_: Throwable) { null }
+
+    private fun findFileByName(name: String): String? {
+        val stack = ArrayDeque<File>()
+        stack.add(File("/storage/emulated/0"))
+        var count = 0
+        while (stack.isNotEmpty() && count < 300_000) {
+            val dir = stack.removeLast()
+            val children = dir.listFiles() ?: continue
+            for (f in children) {
+                count++
+                if (f.isDirectory) {
+                    if (skipDir(f.name)) continue
+                    if (stack.size < 5000) stack.add(f)
+                } else if (f.name.equals(name, ignoreCase = true) && f.length() > 50_000_000) {
+                    return f.absolutePath
+                }
+            }
+        }
+        return null
+    }
+
+    private fun skipDir(name: String): Boolean =
+        name.startsWith(".") || name == "Android" || name == "obb" || name == "cache" ||
+        name == "code_cache" || name == "app_webview" || name == "databases" ||
+        name == "shared_prefs" || name == "no_backup"
 
     private fun toast(msg: String) {
         runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
     }
 
     inner class JsBridge {
-        /** 选择 GGUF 模型文件 */
+
+        /** 是否已授予所有文件访问 */
+        @JavascriptInterface
+        fun hasAllFilesAccess(): Boolean = this@MainActivity.hasAllFilesAccess()
+
+        /** 跳转权限设置页 */
+        @JavascriptInterface
+        fun requestAllFilesAccess() { this@MainActivity.requestAllFilesAccess() }
+
+        /** 扫描本地 .gguf 模型 (优先常见目录, 全盘兜底) */
+        @JavascriptInterface
+        fun listModels(): String {
+            val result = JSONArray()
+            val seen = HashSet<String>()
+            fun scan(dir: File, depth: Int, max: Int) {
+                if (result.length() >= max) return
+                val children = dir.listFiles() ?: return
+                for (f in children) {
+                    if (result.length() >= max) return
+                    if (f.isDirectory) {
+                        if (skipDir(f.name) || depth <= 0) continue
+                        if (seen.add(f.absolutePath)) scan(f, depth - 1, max)
+                    } else if (f.name.endsWith(".gguf", ignoreCase = true) && f.length() > 50_000_000) {
+                        try {
+                            val o = JSONObject()
+                            o.put("name", f.name)
+                            o.put("path", f.absolutePath)
+                            o.put("size", f.length() / 1073741824.0)
+                            result.put(o)
+                        } catch (_: Throwable) {}
+                    }
+                }
+            }
+            // 常见模型目录优先 (快)
+            for (dir in listOf(
+                "/storage/emulated/0/Models",
+                "/storage/emulated/0/Download",
+                "/storage/emulated/0/下载",
+                "/storage/emulated/0/模型")) {
+                scan(File(dir), 3, 30)
+            }
+            // 全盘兜底 (慢)
+            if (result.length() == 0) {
+                scan(File("/storage/emulated/0"), 7, 30)
+            }
+            return result.toString()
+        }
+
+        /** 设置模型路径 (校验存在/可读/.gguf) */
+        @JavascriptInterface
+        fun setModelPath(path: String): Boolean = setModelPathInternal(path)
+
+        /** 已选择模型? */
+        @JavascriptInterface
+        fun hasModel(): Boolean = modelPath != null
+
+        /** 模型名 */
+        @JavascriptInterface
+        fun modelName(): String = modelPath?.let { File(it).name } ?: ""
+
+        /** 从系统文件选择器选 (fallback) */
         @JavascriptInterface
         fun pickModel() {
             runOnUiThread {
@@ -109,14 +245,6 @@ class MainActivity : Activity() {
                 startActivityForResult(intent, REQ_MODEL)
             }
         }
-
-        /** 已选择模型? */
-        @JavascriptInterface
-        fun hasModel(): Boolean = modelPath != null
-
-        /** 模型名 */
-        @JavascriptInterface
-        fun modelName(): String = modelPath?.let { File(it).name } ?: ""
 
         /** 加载模型 (首次较慢) */
         @JavascriptInterface

@@ -89,8 +89,18 @@ textarea:focus{border-color:var(--accent)}
     <b style="font-size:11px;color:var(--accent)">🧠 LLM Pro（本机模型）</b>
     <span id="llmModelName" style="font-size:10px;color:#888">未选择模型</span>
     <span style="flex:1"></span>
-    <button class="btn btn-sample" onclick="pickLlmModel()">选择模型</button>
+    <button class="btn btn-sample" onclick="pickLlmModel()">🔍 扫描模型</button>
     <button class="btn btn-sample" onclick="runLlmPro()">深度检测</button>
+  </div>
+  <div id="llmPermWarn" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--o);border-radius:6px;background:#ff980011;font-size:10px;color:#ffb74d">
+    ⚠️ 需要「所有文件访问」权限才能读取模型文件
+    <button class="btn btn-sample" onclick="requestPerm()" style="margin-left:6px">去开启</button>
+  </div>
+  <div id="llmModelList" style="display:none;margin-top:8px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></div>
+  <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <input id="llmPathInput" type="text" placeholder="或手动输入路径: /storage/emulated/0/Models/xxx.gguf"
+      style="flex:1;min-width:200px;background:#0a0a14;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:10px;outline:none">
+    <button class="btn btn-sample" onclick="inputModelPath()">确定</button>
   </div>
   <div id="llmResult" style="font-size:10px;color:#7ee787;margin-top:6px;display:none"></div>
 </div>
@@ -486,6 +496,7 @@ function detect(){
     '<div class="stat-item"><div class="stat-val">'+(r.stats.metaphorCount||0)+'</div><div class="stat-label">比喻</div></div>'+
     '<div class="stat-item"><div class="stat-val">'+(r.language==='zh'?'中':'EN')+'</div><div class="stat-label">语言</div></div>';
 
+    window.detectResult = r;
     saveHistory(r);
   }catch(e){
     alert('检测出错: '+e.message);
@@ -544,15 +555,78 @@ window.addEventListener('load',renderHistory);
   if (window.AndroidBridge) {
     var bar = document.getElementById('llmBar');
     if (bar) bar.style.display = 'block';
+    if (AndroidBridge.hasAllFilesAccess && !AndroidBridge.hasAllFilesAccess()) {
+      document.getElementById('llmPermWarn').style.display = 'block';
+    }
   }
   window.__llmModelName = function(name){
     var el = document.getElementById('llmModelName');
     if (el) el.textContent = name;
   };
+  window.__permChanged = function(ok){
+    var w = document.getElementById('llmPermWarn');
+    if (w) w.style.display = ok ? 'none' : 'block';
+    if (ok) {
+      var nm = document.getElementById('llmModelName');
+      if (nm && AndroidBridge.hasModel()) nm.textContent = AndroidBridge.modelName();
+    }
+  };
 })();
 
+function requestPerm(){
+  if (window.AndroidBridge && AndroidBridge.requestAllFilesAccess) AndroidBridge.requestAllFilesAccess();
+  else alert('请到 设置→应用→AIGC 文本检测→权限 开启「所有文件访问」');
+}
+
 function pickLlmModel(){
-  if (window.AndroidBridge) AndroidBridge.pickModel();
+  if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
+  if (!AndroidBridge.hasAllFilesAccess()) {
+    document.getElementById('llmPermWarn').style.display = 'block';
+    alert('请先开启「所有文件访问」权限');
+    return;
+  }
+  var box = document.getElementById('llmModelList');
+  box.style.display = 'block';
+  box.innerHTML = '<div style="color:#888;padding:8px">⏳ 正在扫描本地模型...</div>';
+  setTimeout(function(){
+    try {
+      var list = JSON.parse(AndroidBridge.listModels() || '[]');
+      if (list.length === 0) {
+        box.innerHTML = '<div style="color:#888;padding:8px;line-height:1.6">未找到 .gguf 模型文件。<br>请将模型放到 Models/ 或 Download/ 目录，或手动输入完整路径。</div>';
+        return;
+      }
+      box.innerHTML = list.map(function(m){
+        var enc = encodeURIComponent(m.path);
+        return '<div class="model-item" data-path="' + enc + '" onclick="chooseModel(this)" style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px">' +
+          '<span style="color:var(--accent)">📄</span> ' + m.name +
+          '<span style="color:#888;font-size:10px">' + m.size.toFixed(1) + 'GB</span></div>';
+      }).join('') + '<div style="padding:6px 10px;font-size:9px;color:#666">点击选择模型</div>';
+    } catch(e) {
+      box.innerHTML = '<div style="color:var(--r);padding:8px">扫描失败: ' + e.message + '</div>';
+    }
+  }, 50);
+}
+
+function chooseModel(el){
+  try {
+    var path = decodeURIComponent(el.getAttribute('data-path'));
+    if (AndroidBridge.setModelPath(path)) {
+      document.getElementById('llmModelName').textContent = path.split('/').pop();
+      document.getElementById('llmModelList').style.display = 'none';
+    } else {
+      alert('无法读取该文件，请检查「所有文件访问」权限是否已开启');
+    }
+  } catch(e) { alert('选择失败: ' + e.message); }
+}
+
+function inputModelPath(){
+  var v = document.getElementById('llmPathInput').value.trim();
+  if (!v) { alert('请输入模型完整路径'); return; }
+  if (AndroidBridge.setModelPath(v)) {
+    document.getElementById('llmModelName').textContent = v.split('/').pop();
+  } else {
+    alert('路径无效或无法读取，请确认: 1.路径以.gguf结尾 2.文件存在 3.已开启「所有文件访问」');
+  }
 }
 
 function runLlmPro(){
@@ -560,7 +634,7 @@ function runLlmPro(){
   var txt = document.getElementById('input').value.trim();
   if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
   if (txt.length < 100) { alert('文本至少需要100字符'); return; }
-  if (!AndroidBridge.hasModel()) { alert('请先选择 GGUF 模型文件'); return; }
+  if (!AndroidBridge.hasModel()) { alert('请先扫描选择 GGUF 模型文件'); return; }
   box.style.display = 'block';
   box.textContent = '⏳ LLM 推理中... (4B模型约1-3分钟, 请勿退出)';
   window.__llmResult = function(result, error){
@@ -568,16 +642,23 @@ function runLlmPro(){
     var p = result.split('|');
     var ppl = parseFloat(p[0]), score = parseFloat(p[1]);
     box.textContent = '✅ 困惑度=' + ppl.toFixed(2) + ' · LLM深度分=' + score.toFixed(1) + ' (Gemma-4B Q4)';
-    var r = detectResult;
+    var r = window.detectResult;
     if (r) {
       r.ai_probability = Math.round((0.6 * r.ai_probability + 0.4 * score) * 10) / 10;
-      renderResult(r);
-      box.textContent += ' | 融合后 AI 概率: ' + r.ai_probability + '%';
+      var pct = r.ai_probability;
+      var circ = 2 * Math.PI * 52;
+      var fg = document.getElementById('fg');
+      fg.setAttribute('stroke-dashoffset', circ * (1 - pct / 100));
+      var colors = ['#4caf50','#ffc107','#ff9800','#f44336','#f44336'];
+      var ci = pct < 25 ? 0 : pct < 40 ? 1 : pct < 60 ? 2 : pct < 80 ? 3 : 4;
+      fg.setAttribute('stroke', colors[ci]);
+      document.getElementById('pct').textContent = pct + '%';
+      document.getElementById('pct').style.color = colors[ci];
+      box.textContent += ' | 融合后 AI 概率: ' + pct + '%';
     }
   };
   AndroidBridge.analyze(txt);
 }
-
 </script>
 </body>
 </html>
