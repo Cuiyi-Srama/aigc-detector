@@ -27,6 +27,8 @@ static void unload() {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_aigc_detector_LlmProEngine_nativeInit(JNIEnv * env, jobject, jstring path) {
+    // 幂等: 模型已加载则直接复用 (预加载后 analyze 不再重复加载)
+    if (g_model && g_ctx && g_n_vocab > 0) return JNI_TRUE;
     unload();
     const char * p = env->GetStringUTFChars(path, nullptr);
     if (!p) return JNI_FALSE;

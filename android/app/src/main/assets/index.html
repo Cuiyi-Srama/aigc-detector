@@ -16,6 +16,7 @@ textarea:focus{border-color:var(--accent)}
 .btn-row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
 .btn{padding:10px 16px;border-radius:8px;border:none;font-size:13px;cursor:pointer;font-weight:600}
 .btn-detect{background:var(--accent);color:#000;flex:1}
+.btn-llm{background:linear-gradient(135deg,#7c4dff,#00bcd4);color:#fff;flex:1}
 .btn-clear{background:var(--border);color:var(--text)}
 .btn-sample{background:transparent;color:var(--accent);border:1px solid var(--accent);font-size:10px;padding:5px 10px}
 .result{margin-top:12px;display:none}
@@ -75,8 +76,12 @@ textarea:focus{border-color:var(--accent)}
 <div class="subtitle">17维 · 6大模型指纹 · 论证脚手架 · LLM Pro 扩展 · 纯本地离线</div>
 <textarea id="input" placeholder="粘贴文本（至少100字，越长越准）..."></textarea>
 <div class="btn-row">
-  <button class="btn btn-detect" onclick="detect()">开始检测</button>
+  <button class="btn btn-detect" onclick="detect()">⚡ 快速检测</button>
+  <button class="btn btn-llm" onclick="deepDetect()">🧠 深度检测</button>
   <button class="btn btn-clear" onclick="clearAll()">清空</button>
+</div>
+<div style="font-size:9px;color:#666;margin-bottom:6px;padding:4px 8px;border-left:2px solid var(--border)">
+  ⚡快速：秒出结果（17维统计，精度一般） · 🧠深度：需先选本机大模型，等待约1-3分钟（视设备性能），精度更高
 </div>
 <div class="btn-row" style="gap:4px">
   <button class="btn btn-sample" onclick="loadSample('human')">📝范文·人类（背影）</button>
@@ -93,7 +98,7 @@ textarea:focus{border-color:var(--accent)}
     <span id="llmModelName" style="font-size:10px;color:#888">未选择模型</span>
     <span style="flex:1"></span>
     <button class="btn btn-sample" onclick="pickLlmModel()">🔍 扫描模型</button>
-    <button class="btn btn-sample" onclick="runLlmPro()" style="border-color:var(--accent);color:var(--accent);font-weight:700">⚡ 深度检测</button>
+
   </div>
   <div id="llmReadyTip" style="display:none;margin-top:6px;padding:6px 8px;border:1px solid var(--g);border-radius:6px;background:#4caf5011;font-size:10px;color:#7ee787">
     ✅ 模型已就绪！点击 <b>⚡深度检测</b> 将使用本机大模型（真困惑度/可预测率），结果自动融合进下方检测报告
@@ -577,6 +582,17 @@ window.addEventListener('load',renderHistory);
     var tip = document.getElementById('llmReadyTip');
     if (tip) tip.style.display = 'block';
   };
+  window.__llmLoaded = function(ok){
+    var tip = document.getElementById('llmReadyTip');
+    if (tip) {
+      tip.style.display = 'block';
+      tip.style.borderColor = ok ? 'var(--g)' : 'var(--r)';
+      tip.style.color = ok ? '#7ee787' : '#f88';
+      tip.innerHTML = ok
+        ? '✅ 模型已加载完成！点击上方 <b>🧠深度检测</b>（真困惑度/可预测率，约1-3分钟）'
+        : '❌ 模型加载失败，请确认 GGUF 文件有效';
+    }
+  };
   window.__llmProgress = function(done, total){
     var box = document.getElementById('llmResult');
     if (!box) return;
@@ -593,6 +609,22 @@ window.addEventListener('load',renderHistory);
     }
   };
 })();
+
+function deepDetect(){
+  var txt = document.getElementById('input').value.trim();
+  if (txt.length < 100) { alert('请先输入至少100字文本'); return; }
+  if (!window.AndroidBridge) { alert('深度检测需要 APK 版（内置本机大模型引擎）'); return; }
+  if (!AndroidBridge.hasModel()) {
+    var bar = document.getElementById('llmBar');
+    if (bar) bar.style.display = 'block';
+    alert('请先选择模型：点击「🔍扫描模型」选择 GGUF 模型文件');
+    return;
+  }
+  // 1) 快速基础检测
+  detect();
+  // 2) 自动串联 LLM 深度检测
+  runLlmPro();
+}
 
 function requestPerm(){
   if (window.AndroidBridge && AndroidBridge.requestAllFilesAccess) AndroidBridge.requestAllFilesAccess();

@@ -224,7 +224,28 @@ class MainActivity : Activity() {
 
         /** 设置模型路径 (校验存在/可读/.gguf) */
         @JavascriptInterface
-        fun setModelPath(path: String): Boolean = setModelPathInternal(path)
+        fun setModelPath(path: String): Boolean {
+            val ok = setModelPathInternal(path)
+            if (ok) preloadModel()   // 后台预加载, 深度检测时秒开
+            return ok
+        }
+
+        /** 后台预加载模型 (不阻塞 UI) */
+        private fun preloadModel() {
+            val p = modelPath ?: return
+            Thread {
+                try {
+                    val ok = LlmProEngine.nativeInit(p)
+                    runOnUiThread {
+                        webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded($ok);", null)
+                    }
+                } catch (e: Throwable) {
+                    runOnUiThread {
+                        webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded(false);", null)
+                    }
+                }
+            }.start()
+        }
 
         /** 已选择模型? */
         @JavascriptInterface
@@ -261,7 +282,10 @@ class MainActivity : Activity() {
         /** LLM 深度检测 (异步, 回调 window.__llmResult) */
         @JavascriptInterface
         fun analyze(text: String) {
-            if (busy) return
+            if (busy) {
+                notifyJs("", "正在检测中，请稍候...")
+                return
+            }
             val p = modelPath ?: run { notifyJs("", "未选择模型"); return }
             busy = true
             Thread {
