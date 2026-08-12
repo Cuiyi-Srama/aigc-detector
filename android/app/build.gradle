@@ -26,7 +26,23 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            // 固定 release 签名: CI 从 Secrets 解密 keystore, 保证跨版本签名一致可覆盖安装
+            if (System.getenv('KEYSTORE_BASE64') != null) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv('KEYSTORE_BASE64') != null) {
+                storeFile file("${System.getenv('RUNNER_TEMP') ?: '/tmp'}/aigc-release.keystore")
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
         }
     }
     externalNativeBuild {

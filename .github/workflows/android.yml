@@ -59,13 +59,23 @@ jobs:
           cd android
           mkdir -p app/src/main/cpp
           tar -xzf cpp-src.tar.gz -C app/src/main/cpp/
-          ls app/src/main/cpp/llama/ | head -3
+          ls app/src/main/cpp/llama-cpp/src/models/ | grep gemma4
+
+      - name: 🔐 解密签名密钥 (固定 release 签名)
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/aigc-release.keystore"
+          ls -la "$RUNNER_TEMP/aigc-release.keystore"
 
       - name: 🔨 构建 Release APK (含 llama.cpp JNI 编译)
         run: |
           cd android
           rm -f local.properties   # 用 CI 的 ANDROID_HOME
           gradle assembleRelease --no-daemon
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: 📤 上传 APK
         uses: actions/upload-artifact@v4
