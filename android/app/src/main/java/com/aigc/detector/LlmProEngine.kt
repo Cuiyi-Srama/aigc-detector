@@ -16,7 +16,7 @@ object LlmProEngine {
     @JvmStatic
     external fun nativeAnalyze(text: String, progress: ProgressListener?): DoubleArray
 
-    interface ProgressListener {
+    fun interface ProgressListener {
         fun onProgress(done: Int, total: Int)
     }
 
