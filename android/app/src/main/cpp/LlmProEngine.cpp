@@ -33,7 +33,6 @@ Java_com_aigc_detector_LlmProEngine_nativeInit(JNIEnv * env, jobject, jstring pa
 
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;                 // CPU 推理
-    mp.use_mmap = true;
 
     g_model = llama_model_load_from_file(p, mp);
     env->ReleaseStringUTFChars(path, p);
