@@ -32,6 +32,28 @@ jobs:
         with:
           gradle-version: '8.5'
 
+      - name: 💾 Gradle 依赖缓存
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: 💾 NDK 缓存 (避免每次下载 600MB)
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/lib/android/sdk/ndk/23.1.7779620
+          key: ${{ runner.os }}-ndk-23.1.7779620
+
+      - name: 💾 llama.cpp 编译产物缓存 (增量编译, 源码不变秒级)
+        uses: actions/cache@v5
+        with:
+          path: android/app/.cxx
+          key: ${{ runner.os }}-cxx-${{ hashFiles('android/cpp-src.tar.gz', 'android/app/src/main/cpp/CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-cxx-
+
       - name: 🔨 解压 llama.cpp 源码
         run: |
           cd android
