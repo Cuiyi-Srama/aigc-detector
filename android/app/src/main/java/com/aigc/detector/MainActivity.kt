@@ -1,16 +1,15 @@
 package com.aigc.detector
-
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import java.io.File
-
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
@@ -50,25 +49,48 @@ class MainActivity : Activity() {
             if (uri != null) {
                 modelPath = resolvePath(uri)
                 if (modelPath == null) {
-                    toast("无法读取该文件路径，请选择 Download 目录中的 .gguf")
+                    toast("无法解析该文件路径")
                     return
                 }
-                val name = File(modelPath!!).name
-                toast("已选择模型: $name")
+                val f = File(modelPath!!)
+                if (!f.canRead()) {
+                    toast("无读取权限，请开启「所有文件访问」后重试")
+                    requestAllFilesAccess()
+                    modelPath = null
+                    return
+                }
+                toast("已选择模型: ${f.name} (${f.length() / 1073741824.0}GB)")
                 runOnUiThread {
                     webView.evaluateJavascript(
-                        "window.__llmModelName && window.__llmModelName('$name');", null)
+                        "window.__llmModelName && window.__llmModelName('${f.name}');", null)
                 }
             }
         }
     }
 
+    /** 解析 SAF 的 content:// 为真实路径 (支持任意主存储目录, 如 /Models/) */
     private fun resolvePath(uri: Uri): String? {
         return try {
-            val docId = uri.lastPathSegment?.substringAfterLast(':')
-            val f = File("/storage/emulated/0/Download/$docId")
+            val seg = uri.lastPathSegment ?: return null
+            // 格式: primary:Models/gemma-xxx.gguf 或 primary:Download/xxx.gguf
+            val path = seg.removePrefix("primary:")
+            val f = File("/storage/emulated/0/$path")
             if (f.exists()) f.absolutePath else null
         } catch (_: Throwable) { null }
+    }
+
+    /** 引导开启「所有文件访问」权限 (Android 11+) */
+    private fun requestAllFilesAccess() {
+        try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName"))
+            startActivity(intent)
+        } catch (_: Throwable) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            } catch (_: Throwable) { }
+        }
     }
 
     private fun toast(msg: String) {
