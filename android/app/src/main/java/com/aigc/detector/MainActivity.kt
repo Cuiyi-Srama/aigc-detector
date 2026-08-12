@@ -25,8 +25,14 @@ class MainActivity : Activity() {
     private var busy = false
     private var permGuided = false
 
+    // 模型状态机: 0=无模型 1=加载中 2=就绪 3=加载失败
+    @Volatile
+    private var modelState = 0
+
     companion object {
         private const val REQ_MODEL = 1001
+        private const val PREFS = "aigc_prefs"
+        private const val KEY_MODEL = "model_path"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +46,12 @@ class MainActivity : Activity() {
         webView.addJavascriptInterface(JsBridge(), "AndroidBridge")
         setContentView(webView)
         webView.loadUrl("file:///android_asset/index.html")
+
+        // 恢复上次选择的模型并自动预加载
+        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_MODEL, null)
+        if (saved != null && setModelPathInternal(saved)) {
+            preloadModel()
+        }
     }
 
     override fun onResume() {
@@ -115,6 +127,7 @@ class MainActivity : Activity() {
         if (!f.exists() || !f.isFile || !path.endsWith(".gguf", ignoreCase = true)) return false
         if (!f.canRead()) return false
         modelPath = f.absolutePath
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_MODEL, f.absolutePath).apply()
         return true
     }
 
@@ -222,7 +235,7 @@ class MainActivity : Activity() {
             return result.toString()
         }
 
-        /** 设置模型路径 (校验存在/可读/.gguf) */
+        /** 设置模型路径 (校验存在/可读/.gguf), 持久化 + 后台预加载 */
         @JavascriptInterface
         fun setModelPath(path: String): Boolean {
             val ok = setModelPathInternal(path)
@@ -230,16 +243,24 @@ class MainActivity : Activity() {
             return ok
         }
 
-        /** 后台预加载模型 (不阻塞 UI) */
+        /** 模型状态: 0=无 1=加载中 2=就绪 3=失败 */
+        @JavascriptInterface
+        fun modelState(): Int = this@MainActivity.modelState
+
+        /** 后台预加载模型 (不阻塞 UI, 状态机管理) */
         private fun preloadModel() {
             val p = modelPath ?: return
+            if (modelState == 1) return          // 已在加载
+            modelState = 1
             Thread {
                 try {
                     val ok = LlmProEngine.nativeInit(p)
+                    modelState = if (ok) 2 else 3
                     runOnUiThread {
                         webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded($ok);", null)
                     }
                 } catch (e: Throwable) {
+                    modelState = 3
                     runOnUiThread {
                         webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded(false);", null)
                     }
@@ -286,6 +307,10 @@ class MainActivity : Activity() {
                 notifyJs("", "正在检测中，请稍候...")
                 return
             }
+            if (modelState == 1) {
+                notifyJs("", "模型加载中，请稍候几秒...")
+                return
+            }
             val p = modelPath ?: run { notifyJs("", "未选择模型"); return }
             busy = true
             Thread {
@@ -304,8 +329,9 @@ class MainActivity : Activity() {
                     if (r == null) {
                         notifyJs("", "推理失败或文本过短")
                     } else {
-                        notifyJs(String.format("%.1f|%.3f|%.3f|%.1f|%d",
-                            r.ppl, r.predRate, r.rankPct, r.llmScore, r.tokens), "")
+                        notifyJs(String.format("%.1f|%.3f|%.3f|%.1f|%d|%.3f|%.3f|%.3f|%d|%.3f",
+                            r.ppl, r.predRate, r.rankPct, r.llmScore, r.tokens,
+                            r.segStd, r.rareRate, r.top5Rate, r.segCount, r.avgNll), "")
                     }
                 } catch (e: Throwable) {
                     notifyJs("", e.message ?: "未知错误")

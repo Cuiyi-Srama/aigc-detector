@@ -113,6 +113,15 @@ textarea:focus{border-color:var(--accent)}
       style="flex:1;min-width:200px;background:#0a0a14;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:10px;outline:none">
     <button class="btn btn-sample" onclick="inputModelPath()">确定</button>
   </div>
+  <div id="llmProgress" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:6px">
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:#888;margin-bottom:4px">
+      <span id="llmStage">准备中...</span><span id="llmPct">0%</span>
+    </div>
+    <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+      <div id="llmBarFill" style="height:100%;width:0%;background:linear-gradient(90deg,#7c4dff,#00e5ff);border-radius:4px;transition:width .3s"></div>
+    </div>
+    <div id="llmEta" style="font-size:9px;color:#666;margin-top:3px"></div>
+  </div>
   <div id="llmResult" style="font-size:10px;color:#7ee787;margin-top:6px;display:none"></div>
 </div>
 <div class="result" id="result">
@@ -593,13 +602,41 @@ window.addEventListener('load',renderHistory);
         : '❌ 模型加载失败，请确认 GGUF 文件有效';
     }
   };
+  var llmStartTime = 0;
   window.__llmProgress = function(done, total){
-    var box = document.getElementById('llmResult');
+    var box = document.getElementById('llmProgress');
     if (!box) return;
+    if (llmStartTime === 0) llmStartTime = Date.now();
     var pct = total > 0 ? Math.round(done / total * 100) : 0;
     box.style.display = 'block';
-    box.textContent = '⏳ LLM 推理中... ' + pct + '% (' + done + '/' + total + ' tokens)';
+    document.getElementById('llmBarFill').style.width = pct + '%';
+    document.getElementById('llmPct').textContent = pct + '%';
+    // 阶段文案
+    var stage = '⏳ 逐词评估中...';
+    if (pct < 15) stage = '⏳ 正在读取文本...';
+    else if (pct < 85) stage = '🧠 大模型逐词预测中 (已完成 ' + done + '/' + total + ' tokens)...';
+    else stage = '📊 汇总维度分析...';
+    document.getElementById('llmStage').textContent = stage;
+    // 剩余时间估算
+    var el = document.getElementById('llmEta');
+    if (done > 0 && el) {
+      var elapsed = (Date.now() - llmStartTime) / 1000;
+      var rate = elapsed / done;
+      var remain = Math.round(rate * (total - done));
+      if (remain < 60) el.textContent = '已用 ' + Math.round(elapsed) + 's · 预计还需 ' + remain + 's';
+      else el.textContent = '已用 ' + Math.round(elapsed) + 's · 预计还需 ' + Math.floor(remain/60) + 'm' + (remain%60) + 's';
+    }
   };
+  // 恢复上次选择的模型 (持久化)
+  try {
+    var savedPath = localStorage.getItem('llm_model_path');
+    if (savedPath && window.AndroidBridge && AndroidBridge.setModelPath(savedPath)) {
+      var nm = document.getElementById('llmModelName');
+      if (nm) nm.textContent = savedPath.split('/').pop();
+      var tip = document.getElementById('llmReadyTip');
+      if (tip) { tip.style.display = 'block'; tip.innerHTML = '⏳ 正在恢复上次的模型并加载...'; }
+    }
+  } catch(e) {}
   window.__permChanged = function(ok){
     var w = document.getElementById('llmPermWarn');
     if (w) w.style.display = ok ? 'none' : 'block';
@@ -666,6 +703,7 @@ function chooseModel(el){
     if (AndroidBridge.setModelPath(path)) {
       document.getElementById('llmModelName').textContent = path.split('/').pop();
       document.getElementById('llmModelList').style.display = 'none';
+      try { localStorage.setItem('llm_model_path', path); } catch(e) {}
     } else {
       alert('无法读取该文件，请检查「所有文件访问」权限是否已开启');
     }
@@ -677,6 +715,7 @@ function inputModelPath(){
   if (!v) { alert('请输入模型完整路径'); return; }
   if (AndroidBridge.setModelPath(v)) {
     document.getElementById('llmModelName').textContent = v.split('/').pop();
+    try { localStorage.setItem('llm_model_path', v); } catch(e) {}
   } else {
     alert('路径无效或无法读取，请确认: 1.路径以.gguf结尾 2.文件存在 3.已开启「所有文件访问」');
   }
@@ -693,22 +732,75 @@ function runLlmPro(){
   window.__llmResult = function(result, error){
     if (error) { box.textContent = '❌ ' + error; return; }
     var p = result.split('|');
-    var ppl = parseFloat(p[0]), score = parseFloat(p[1]);
-    box.textContent = '✅ 困惑度=' + ppl.toFixed(2) + ' · LLM深度分=' + score.toFixed(1) + ' (Gemma-4B Q4)';
+    var ppl = parseFloat(p[0]), pred = parseFloat(p[1]), rank = parseFloat(p[2]);
+    var score = parseFloat(p[3]), tokens = parseInt(p[4]);
+    var segStd = parseFloat(p[5]), rare = parseFloat(p[6]), top5 = parseFloat(p[7]);
+    var segCnt = parseInt(p[8]);
+    // --- 维度解读 ---
+    function dim(v, thrA, thrB, nameA, nameB, nameC) {
+      return v <= thrA ? nameA : v <= thrB ? nameB : nameC;
+    }
+    var pplTxt = dim(ppl, 8, 20, 'AI特征明显（高度可预测）', '可预测性中等', '接近人类（难以预测）');
+    var predTxt = dim(pred, 0.20, 0.35, '模式化程度低', '模式化程度中等', '模式化程度高（AI特征）');
+    var segTxt = segCnt < 2 ? '文本过短无法分段' : dim(segStd, 0.15, 0.35, '风格高度均匀（AI特征）', '风格一致性中等', '风格波动大（偏人类）');
+    var rareTxt = dim(rare, 0.08, 0.18, '用词保守（AI特征）', '用词常规', '用词自由（偏人类）');
+    var top5Txt = dim(top5, 0.40, 0.60, '用词跳跃', '用词常规', '高度可预测（AI特征）');
+    // 维度 AI 倾向分 (0-100, 高=AI)
+    function pplScore(v) { return v <= 8 ? 82 : v <= 20 ? 62 : v <= 40 ? 40 : 18; }
+    function predScore(v) { return Math.min(100, Math.round(v / 0.35 * 100)); }
+    function segScore(v) { return segCnt < 2 ? 50 : Math.round(Math.max(0, Math.min(1, 1 - (v - 0.1) / 0.35)) * 100); }
+    function rareScore(v) { return Math.round(Math.max(0, Math.min(1, 1 - v / 0.25)) * 100); }
+    function top5Score(v) { return Math.min(100, Math.round(v / 0.6 * 100)); }
+    var d1 = pplScore(ppl), d2 = predScore(pred), d3 = segScore(segStd), d4 = rareScore(rare), d5 = top5Score(top5);
+    // --- 融合: 快速检测 + LLM (修复 aiProbability 字段名 bug) ---
     var r = window.detectResult;
-    if (r) {
-      r.ai_probability = Math.round((0.6 * r.ai_probability + 0.4 * score) * 10) / 10;
-      var pct = r.ai_probability;
+    var fused = null;
+    if (r && typeof r.aiProbability === 'number') {
+      fused = Math.round((0.55 * r.aiProbability + 0.45 * score) * 10) / 10;
       var circ = 2 * Math.PI * 52;
       var fg = document.getElementById('fg');
-      fg.setAttribute('stroke-dashoffset', circ * (1 - pct / 100));
+      fg.setAttribute('stroke-dashoffset', circ * (1 - fused / 100));
       var colors = ['#4caf50','#ffc107','#ff9800','#f44336','#f44336'];
-      var ci = pct < 25 ? 0 : pct < 40 ? 1 : pct < 60 ? 2 : pct < 80 ? 3 : 4;
+      var ci = fused < 25 ? 0 : fused < 40 ? 1 : fused < 60 ? 2 : fused < 80 ? 3 : 4;
       fg.setAttribute('stroke', colors[ci]);
-      document.getElementById('pct').textContent = pct + '%';
+      document.getElementById('pct').textContent = fused + '%';
       document.getElementById('pct').style.color = colors[ci];
-      box.textContent += ' | 融合后 AI 概率: ' + pct + '%';
+      var lb = document.getElementById('levelBadge');
+      var lt = document.getElementById('levelText');
+      if (lb) {
+        var lv = fused < 25 ? 'Human' : fused < 40 ? 'Maybe AI' : fused < 60 ? 'Uncertain' : fused < 80 ? 'Likely AI' : 'Very Likely AI';
+        lb.textContent = lv;
+        lb.className = 'level-badge ' + (lv === 'Human' ? 'level-human' : lv === 'Maybe AI' ? 'level-maybe' : lv === 'Uncertain' ? 'level-uncertain' : 'level-likely');
+        if (lt) lt.textContent = lv === 'Human' ? '人类写作' : lv === 'Maybe AI' ? '可能含AI' : lv === 'Uncertain' ? '不确定' : 'AI生成';
+      }
     }
+    // --- 报告卡片 ---
+    function barHtml(name, val, txt, color) {
+      return '<div class="detail-item"><div class="detail-name">' + name + '</div>' +
+        '<div class="detail-bar"><div class="detail-bar-fill" style="width:' + val + '%;background:' + color + '"></div></div>' +
+        '<div class="detail-val">' + txt + '</div></div>';
+    }
+    function col(v) { return v < 30 ? '#4caf50' : v < 55 ? '#ffc107' : v < 75 ? '#ff9800' : '#f44336'; }
+    var html = '<div style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:6px">' +
+      '<b style="color:var(--accent)">🧠 LLM 深度检测报告</b>' +
+      '<span style="color:#888;font-size:9px;margin-left:6px">评估 ' + tokens + ' tokens · ' + segCnt + ' 段</span></div>' +
+      '<div class="detail-list">' +
+      barHtml('困惑度', d1, ppl.toFixed(1) + ' · ' + pplTxt, col(d1)) +
+      barHtml('top1可预测', d2, (pred * 100).toFixed(0) + '% · ' + predTxt, col(d2)) +
+      barHtml('top5可预测', d5, (top5 * 100).toFixed(0) + '% · ' + top5Txt, col(d5)) +
+      barHtml('分段波动', d3, segStd.toFixed(2) + ' · ' + segTxt, col(d3)) +
+      barHtml('罕见词率', d4, (rare * 100).toFixed(1) + '% · ' + rareTxt, col(d4)) +
+      '</div>';
+    if (fused !== null) {
+      html += '<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:#00e5ff11;font-size:10px;line-height:1.6;color:var(--text)">' +
+        '⚡ <b>融合结论</b>：快速检测 ' + r.aiProbability + '% × 0.55 + LLM深度分 ' + score.toFixed(1) + ' × 0.45 = <b style="color:var(--accent)">' + fused + '% AI 概率</b></div>';
+    }
+    html += '<div style="margin-top:6px;font-size:9px;color:#666;line-height:1.6">' +
+      '💡 原理：让大模型逐词预测你的文本——AI 写的文章 AI 一猜一个准（困惑度低、可预测率高）；人类写作难以预测（困惑度高、波动大）。' +
+      '困惑度越高、波动越大、罕见词越多 → 越像人类。</div>';
+    box.innerHTML = html;
+    box.style.display = 'block';
+    document.getElementById('llmProgress').style.display = 'none';
   };
   AndroidBridge.analyze(txt);
 }
