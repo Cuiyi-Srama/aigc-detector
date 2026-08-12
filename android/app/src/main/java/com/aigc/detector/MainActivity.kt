@@ -21,7 +21,10 @@ import java.util.ArrayDeque
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
-    private var modelPath: String? = null
+    private var modelPath: String? = null          // 当前激活模型 (selectModel 切换)
+    private var modelPathZh: String? = null        // 中文模型 (千问)
+    private var modelPathEn: String? = null        // 英文模型 (Gemma)
+    private var curModelLang = "zh"                // 当前语言: zh/en
     private var busy = false
     private var permGuided = false
 
@@ -33,6 +36,7 @@ class MainActivity : Activity() {
         private const val REQ_MODEL = 1001
         private const val PREFS = "aigc_prefs"
         private const val KEY_MODEL = "model_path"
+        private const val KEY_MODEL_EN = "model_path_en"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,9 +51,17 @@ class MainActivity : Activity() {
         setContentView(webView)
         webView.loadUrl("file:///android_asset/index.html")
 
-        // 恢复上次选择的模型并自动预加载
-        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_MODEL, null)
-        if (saved != null && setModelPathInternal(saved)) {
+        // 恢复上次选择的双模型并自动预加载 (zh 优先为当前激活)
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val savedZh = prefs.getString(KEY_MODEL, null)
+        val savedEn = prefs.getString(KEY_MODEL_EN, null)
+        if (savedZh != null && setModelPathInternal(savedZh)) {
+            modelPathZh = modelPath
+        }
+        if (savedEn != null && setModelPathEnInternal(savedEn)) {
+            // modelPathEn 已由 setModelPathEnInternal 设置
+        }
+        if (modelPathZh != null || modelPathEn != null) {
             preloadModel()
         }
     }
@@ -128,6 +140,16 @@ class MainActivity : Activity() {
         if (!f.canRead()) return false
         modelPath = f.absolutePath
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_MODEL, f.absolutePath).apply()
+        return true
+    }
+
+    /** 设置英文模型路径 (双模型) */
+    private fun setModelPathEnInternal(path: String): Boolean {
+        val f = File(path)
+        if (!f.exists() || !f.isFile || !path.endsWith(".gguf", ignoreCase = true)) return false
+        if (!f.canRead()) return false
+        modelPathEn = f.absolutePath
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_MODEL_EN, f.absolutePath).apply()
         return true
     }
 
@@ -256,13 +278,53 @@ class MainActivity : Activity() {
             return result.toString()
         }
 
-        /** 设置模型路径 (校验存在/可读/.gguf), 持久化 + 后台预加载 */
+        /** 设置中文模型路径 (校验存在/可读/.gguf), 持久化 + 后台预加载 */
         @JavascriptInterface
-        fun setModelPath(path: String): Boolean {
+        fun setModelPathZh(path: String): Boolean {
             val ok = setModelPathInternal(path)
-            if (ok) preloadModel()   // 后台预加载, 深度检测时秒开
+            if (ok) {
+                modelPathZh = modelPath
+                preloadModel()
+            }
             return ok
         }
+
+        /** 设置英文模型路径 (校验存在/可读/.gguf), 持久化 + 后台预加载 */
+        @JavascriptInterface
+        fun setModelPathEn(path: String): Boolean {
+            val ok = setModelPathEnInternal(path)
+            if (ok) preloadModel()
+            return ok
+        }
+
+        /** 按语言选择模型: 0=未选 1=加载中 2=就绪 (切换当前激活模型) */
+        @JavascriptInterface
+        fun selectModel(lang: String): Int {
+            curModelLang = lang
+            val p = if (lang == "en") modelPathEn else modelPathZh
+            if (p == null) return 0
+            if (modelState == 1) return 1
+            if (modelState == 2 && modelPath == p) return 2
+            modelPath = p
+            preloadModel()
+            return 1
+        }
+
+        /** 已选择模型? (任一语言) */
+        @JavascriptInterface
+        fun hasModel(): Boolean = modelPathZh != null || modelPathEn != null
+
+        /** 当前语言模型名 */
+        @JavascriptInterface
+        fun modelName(): String = (if (curModelLang == "en") modelPathEn else modelPathZh)?.let { File(it).name } ?: ""
+
+        /** 中文模型名 */
+        @JavascriptInterface
+        fun modelNameZh(): String = modelPathZh?.let { File(it).name } ?: ""
+
+        /** 英文模型名 */
+        @JavascriptInterface
+        fun modelNameEn(): String = modelPathEn?.let { File(it).name } ?: ""
 
         /** 模型状态: 0=无 1=加载中 2=就绪 3=失败 */
         @JavascriptInterface
