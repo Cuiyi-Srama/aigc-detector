@@ -14,6 +14,8 @@ h1{text-align:center;font-size:1.4rem;margin:8px 0 2px;color:var(--accent)}
 textarea{width:100%;height:140px;background:var(--card);color:var(--text);border:2px solid var(--border);border-radius:12px;padding:12px;font-size:14px;resize:vertical;outline:none;transition:border .2s;line-height:1.7}
 textarea:focus{border-color:var(--accent)}
 .btn-row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.type-btn{background:var(--card);border:1px solid var(--border);color:#aaa;border-radius:14px;padding:4px 10px;font-size:9.5px;cursor:pointer}
+.type-btn.active{background:linear-gradient(135deg,#7c4dff33,#00e5ff22);border-color:var(--accent);color:var(--accent);font-weight:600}
 .btn{padding:10px 16px;border-radius:8px;border:none;font-size:13px;cursor:pointer;font-weight:600}
 .btn-detect{background:var(--accent);color:#000;flex:1}
 .btn-llm{background:linear-gradient(135deg,#7c4dff,#00bcd4);color:#fff;flex:1}
@@ -74,6 +76,16 @@ textarea:focus{border-color:var(--accent)}
 <div class="app">
 <h1>AIGC 文本检测 v8</h1>
 <div class="subtitle">17维 · 6大模型指纹 · 论证脚手架 · LLM Pro 扩展 · 纯本地离线</div>
+<div style="display:flex;align-items:center;gap:5px;margin:8px 0 6px;flex-wrap:wrap">
+  <span style="font-size:10px;color:#888">📑 文章类型</span>
+  <button class="type-btn active" id="t-general" onclick="setType('general')">🌐 通用</button>
+  <button class="type-btn" id="t-academic" onclick="setType('academic')">📚 学术论文</button>
+  <button class="type-btn" id="t-news" onclick="setType('news')">📰 新闻时评</button>
+  <button class="type-btn" id="t-literature" onclick="setType('literature')">📖 文学作品</button>
+  <button class="type-btn" id="t-web" onclick="setType('web')">💬 网络文章</button>
+  <button class="type-btn" id="t-formal" onclick="setType('formal')">🏛 公文演讲</button>
+</div>
+<div id="typeTip" style="font-size:9px;color:#666;margin-bottom:6px;padding:4px 8px;border-left:2px solid var(--border);display:none"></div>
 <textarea id="input" placeholder="粘贴文本（至少100字，越长越准）..."></textarea>
 <div class="btn-row">
   <button class="btn btn-detect" onclick="detect()">⚡ 快速检测</button>
@@ -95,9 +107,14 @@ textarea:focus{border-color:var(--accent)}
 <div id="llmBar" style="display:none;margin:8px 0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
     <b style="font-size:11px;color:var(--accent)">🧠 LLM Pro（本机模型）</b>
-    <span id="llmModelName" style="font-size:10px;color:#888">未选择模型</span>
+    <span style="font-size:10px;color:#888">🇨🇳 中文模型: <b id="llmModelNameZh" style="color:var(--text)">未选择</b></span>
     <span style="flex:1"></span>
-    <button class="btn btn-sample" onclick="pickLlmModel()">🔍 扫描模型</button>
+    <button class="btn btn-sample" onclick="pickLlmModel('zh')">🔍 选中文</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px">
+    <span style="font-size:10px;color:#888">🇬🇧 英文模型: <b id="llmModelNameEn" style="color:var(--text)">未选择</b></span>
+    <span style="flex:1"></span>
+    <button class="btn btn-sample" onclick="pickLlmModel('en')">🔍 选英文</button>
 
   </div>
   <div id="llmReadyTip" style="display:none;margin-top:6px;padding:6px 8px;border:1px solid var(--g);border-radius:6px;background:#4caf5011;font-size:10px;color:#7ee787">
@@ -585,9 +602,11 @@ window.addEventListener('load',renderHistory);
       document.getElementById('llmPermWarn').style.display = 'block';
     }
   }
+  var curModelLangRef = 'zh';
   window.__llmModelName = function(name){
-    var el = document.getElementById('llmModelName');
-    if (el) el.textContent = name;
+    var lang = curModelLangRef || 'zh';
+    var el = document.getElementById(lang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh');
+    if (el && name) el.textContent = name;
     var tip = document.getElementById('llmReadyTip');
     if (tip) tip.style.display = 'block';
   };
@@ -602,6 +621,73 @@ window.addEventListener('load',renderHistory);
         : '❌ 模型加载失败，请确认 GGUF 文件有效';
     }
   };
+  // ===== v8.2 分类型指纹 =====
+  var curType = 'general';
+  // 类型指纹: {type: {human:{ppl:[mu,sigma],pred:[..],top5:[..],rare:[..],seg_std:[..]}, ai:{...}}}
+  // Qwen3-4B 实测218篇拟合 (type_fingerprints.json, 回测94.0%)
+  var __TYPE_FP__ = {"academic":{"en":{"dims":{"ppl":{"mu":12.9502,"sigma":12.3651,"dir":-1,"w":0.8605},"pred":{"mu":0.5582,"sigma":0.1253,"dir":1,"w":0.1},"top5":{"mu":0.7711,"sigma":0.104,"dir":1,"w":1.6772},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.3041,"sigma":0.2564,"dir":-1,"w":1.0838}},"b":-1.5724},"zh":{"dims":{"ppl":{"mu":9.4055,"sigma":3.571,"dir":-1,"w":0.6214},"pred":{"mu":0.5355,"sigma":0.0572,"dir":1,"w":0.1},"top5":{"mu":0.7848,"sigma":0.0494,"dir":1,"w":1.9921},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.2559,"sigma":0.1314,"dir":-1,"w":1.4647}},"b":0.0543}},"formal":{"en":{"dims":{"ppl":{"mu":9.0812,"sigma":4.963,"dir":-1,"w":1.1875},"pred":{"mu":0.5799,"sigma":0.152,"dir":1,"w":0.125},"top5":{"mu":0.8032,"sigma":0.098,"dir":1,"w":0.2508},"rare":{"mu":0.0001,"sigma":0.0005,"dir":-1,"w":0.0},"seg_std":{"mu":0.3603,"sigma":0.1542,"dir":-1,"w":0.4617}},"b":-0.4989},"zh":{"dims":{"ppl":{"mu":13.7709,"sigma":17.4238,"dir":-1,"w":0.8973},"pred":{"mu":0.5751,"sigma":0.1374,"dir":1,"w":0.6241},"top5":{"mu":0.7946,"sigma":0.139,"dir":1,"w":1.4905},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.3185,"sigma":0.229,"dir":-1,"w":2.047}},"b":-0.9086}},"literature":{"en":{"dims":{"ppl":{"mu":18.1617,"sigma":9.6767,"dir":-1,"w":0.9768},"pred":{"mu":0.4573,"sigma":0.1091,"dir":1,"w":0.075},"top5":{"mu":0.7036,"sigma":0.0886,"dir":1,"w":1.0279},"rare":{"mu":0.0,"sigma":0.0002,"dir":-1,"w":0.0},"seg_std":{"mu":0.3512,"sigma":0.1829,"dir":-1,"w":1.0353}},"b":-2.1442},"zh":{"dims":{"ppl":{"mu":24.5104,"sigma":11.1641,"dir":-1,"w":0.9397},"pred":{"mu":0.4259,"sigma":0.0714,"dir":1,"w":0.5916},"top5":{"mu":0.6607,"sigma":0.0795,"dir":1,"w":0.9843},"rare":{"mu":0.0,"sigma":0.0002,"dir":-1,"w":0.0},"seg_std":{"mu":0.3008,"sigma":0.1124,"dir":-1,"w":1.4909}},"b":-3.3207}},"news":{"en":{"dims":{"ppl":{"mu":9.6109,"sigma":2.7728,"dir":-1,"w":0.6878},"pred":{"mu":0.5085,"sigma":0.0497,"dir":1,"w":0.15},"top5":{"mu":0.7796,"sigma":0.0638,"dir":1,"w":0.8956},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.231,"sigma":0.2159,"dir":-1,"w":0.9139}},"b":-0.2859},"zh":{"dims":{"ppl":{"mu":13.9442,"sigma":9.2681,"dir":-1,"w":1.1622},"pred":{"mu":0.5029,"sigma":0.0691,"dir":1,"w":0.0753},"top5":{"mu":0.7455,"sigma":0.0979,"dir":1,"w":1.389},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.3388,"sigma":0.1581,"dir":-1,"w":1.1086}},"b":0.0349}},"web":{"en":{"dims":{"ppl":{"mu":10.8474,"sigma":4.6278,"dir":-1,"w":0.7212},"pred":{"mu":0.5134,"sigma":0.069,"dir":1,"w":0.125},"top5":{"mu":0.7739,"sigma":0.051,"dir":1,"w":1.3567},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.1778,"sigma":0.1742,"dir":-1,"w":0.2095}},"b":-0.6598},"zh":{"dims":{"ppl":{"mu":30.4113,"sigma":19.4447,"dir":-1,"w":0.9284},"pred":{"mu":0.4142,"sigma":0.0809,"dir":1,"w":0.759},"top5":{"mu":0.6525,"sigma":0.0934,"dir":1,"w":0.8033},"rare":{"mu":0.0002,"sigma":0.0009,"dir":-1,"w":0.0},"seg_std":{"mu":0.2704,"sigma":0.166,"dir":-1,"w":0.8651}},"b":-1.6292}},"general":{"zh":{"dims":{"ppl":{"mu":20.9079,"sigma":15.6831,"dir":-1,"w":1.3593},"pred":{"mu":0.4695,"sigma":0.1041,"dir":1,"w":0.1},"top5":{"mu":0.7059,"sigma":0.1105,"dir":1,"w":1.9576},"rare":{"mu":0.0001,"sigma":0.0005,"dir":-1,"w":0.0},"seg_std":{"mu":0.2954,"sigma":0.1573,"dir":-1,"w":1.3676}},"b":-1.6043},"en":{"dims":{"ppl":{"mu":14.3952,"sigma":9.9941,"dir":-1,"w":2.01},"pred":{"mu":0.5058,"sigma":0.1217,"dir":1,"w":0.1},"top5":{"mu":0.7449,"sigma":0.0971,"dir":1,"w":1.9097},"rare":{"mu":0.0,"sigma":0.0002,"dir":-1,"w":0.0},"seg_std":{"mu":0.3124,"sigma":0.2119,"dir":-1,"w":1.2285}},"b":-2.5062}}};
+  var TYPE_FP = __TYPE_FP__;  // Qwen3-4B 实测校准指纹 (v8.2.0)
+  var TYPE_META = {
+    general:    {name:'🌐 通用混合', tip:'不指定类型，使用全局混合基准（人类/现代AI综合）'},
+    academic:   {name:'📚 学术论文/研究报告', tip:'学术语体：摘要-引言-方法-结论结构，专业术语密度高。人类论文也高度结构化，AI特征阈值放宽'},
+    news:       {name:'📰 新闻报道/时评', tip:'客观叙事+时效性表达。AI新闻模板化（导语-背景-展望）特征明显'},
+    literature: {name:'📖 文学作品/散文', tip:'文学创作：人类写作困惑度极高、风格波动大；AI文学相对平滑可预测，差异最明显'},
+    web:        {name:'💬 网络文章/科普', tip:'自媒体/博客/问答：人类口语化、随意；AI结构化、全面。差异中等'},
+    formal:     {name:'🏛 公文/演讲稿', tip:'正式文书：套话固定搭配多，人类与AI都程式化，差异最小，需最严格阈值'}
+  };
+  function setType(t) {
+    curType = t;
+    for (var k in TYPE_META) {
+      var el = document.getElementById('t-' + k);
+      if (el) el.className = 'type-btn' + (k === t ? ' active' : '');
+    }
+    var tip = document.getElementById('typeTip');
+    if (tip) { tip.style.display = t === 'general' ? 'none' : 'block'; tip.textContent = TYPE_META[t].tip; }
+  }
+  // ===== 逻辑回归校准器 (大模型先验 + 小模型实测校准) =====
+  // TYPE_FP 格式: {type:{lang:{dims:{ppl:{mu,sigma,dir,w},...}, b:0}}}
+  // score = sigmoid( sum(w_d * (x_d - mu_d)/sigma_d * dir_d) + b ) * 100
+  // 先验权重由大模型给出; 小模型(Qwen)实测语料后用真实标签拟合更新 mu/sigma/w/b
+  function fp(type, lang) {
+    if (!TYPE_FP) return null;
+    var t = TYPE_FP[type] || TYPE_FP['general'];
+    if (!t) return null;
+    return t[lang] || t['general'] || null;
+  }
+  // 计算 LLM 深度分 (0-100, 类型专属逻辑回归校准)
+  function typeAwareScore(metrics) {
+    var f = fp(curType, metrics.lang || 'zh');
+    if (!f || !f.dims) return metrics.llmScore;
+    var z = 0, wsum = 0;
+    var keys = ['ppl','pred','top5','rare','seg_std'];
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var d = f.dims[k];
+      if (!d || d.sigma <= 1e-9) continue;
+      var x = metrics[k];
+      if (x === undefined || isNaN(x)) continue;
+      z += d.w * d.dir * (x - d.mu) / d.sigma;
+      wsum += d.w;
+    }
+    if (wsum <= 0) return metrics.llmScore;
+    var b = f.b || 0;
+    var p = 1 / (1 + Math.exp(-(z + b)));
+    return Math.round(p * 100);
+  }
+  // 语言检测 (用于选择指纹基准)
+  function detectLang() {
+    var txt = document.getElementById('input').value || '';
+    var cn = (txt.match(/[一-龥]/g) || []).length;
+    var en = (txt.match(/[a-zA-Z]/g) || []).length;
+    return cn >= en ? 'zh' : 'en';
+  }
+  // 语言检测 (用于选择指纹基准)
+  function detectLang() {
+    var txt = document.getElementById('input').value || '';
+    var cn = (txt.match(/[一-龥]/g) || []).length;
+    var en = (txt.match(/[a-zA-Z]/g) || []).length;
+    return cn >= en ? 'zh' : 'en';
+  }
   var llmStartTime = 0;
   window.__llmProgress = function(done, total){
     var box = document.getElementById('llmProgress');
@@ -627,14 +713,21 @@ window.addEventListener('load',renderHistory);
       else el.textContent = '已用 ' + Math.round(elapsed) + 's · 预计还需 ' + Math.floor(remain/60) + 'm' + (remain%60) + 's';
     }
   };
-  // 恢复上次选择的模型 (持久化)
+  // 恢复双模型 (持久化)
   try {
-    var savedPath = localStorage.getItem('llm_model_path');
-    if (savedPath && window.AndroidBridge && AndroidBridge.setModelPath(savedPath)) {
-      var nm = document.getElementById('llmModelName');
-      if (nm) nm.textContent = savedPath.split('/').pop();
+    var savedZh = localStorage.getItem('llm_model_zh');
+    var savedEn = localStorage.getItem('llm_model_en');
+    if (savedZh && window.AndroidBridge && AndroidBridge.setModelPathZh(savedZh)) {
+      var nmz = document.getElementById('llmModelNameZh');
+      if (nmz) nmz.textContent = savedZh.split('/').pop();
+    }
+    if (savedEn && window.AndroidBridge && AndroidBridge.setModelPathEn(savedEn)) {
+      var nme = document.getElementById('llmModelNameEn');
+      if (nme) nme.textContent = savedEn.split('/').pop();
+    }
+    if (savedZh || savedEn) {
       var tip = document.getElementById('llmReadyTip');
-      if (tip) { tip.style.display = 'block'; tip.innerHTML = '⏳ 正在恢复上次的模型并加载...'; }
+      if (tip) { tip.style.display = 'block'; tip.innerHTML = '⏳ 正在恢复模型并加载...'; }
     }
   } catch(e) {}
   window.__permChanged = function(ok){
@@ -651,12 +744,12 @@ function deepDetect(){
   var txt = document.getElementById('input').value.trim();
   if (txt.length < 100) { alert('请先输入至少100字文本'); return; }
   if (!window.AndroidBridge) { alert('深度检测需要 APK 版（内置本机大模型引擎）'); return; }
-  if (!AndroidBridge.hasModel()) {
-    var bar = document.getElementById('llmBar');
-    if (bar) bar.style.display = 'block';
-    alert('请先选择模型：点击「🔍扫描模型」选择 GGUF 模型文件');
-    return;
-  }
+  // v8.2 双模型: 按语言自动选择 (中文→千问, 英文→Gemma)
+  var lang = detectLang();
+  curModelLangRef = lang;
+  var st = AndroidBridge.selectModel(lang);
+  if (st === 0) { alert((lang === 'zh' ? '请先选择中文模型' : '请先选择英文模型') + '：点击「🔍选中文/选英文」扫描 GGUF 文件'); return; }
+  if (st === 1) { alert((lang === 'zh' ? '中文' : '英文') + '模型加载中，请稍候几秒再试...'); return; }
   // 1) 快速基础检测
   detect();
   // 2) 自动串联 LLM 深度检测
@@ -668,7 +761,8 @@ function requestPerm(){
   else alert('请到 设置→应用→AIGC 文本检测→权限 开启「所有文件访问」');
 }
 
-function pickLlmModel(){
+function pickLlmModel(lang){
+  var curScanLang = lang || 'zh';
   if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
   if (!AndroidBridge.hasAllFilesAccess()) {
     document.getElementById('llmPermWarn').style.display = 'block';
@@ -700,10 +794,12 @@ function pickLlmModel(){
 function chooseModel(el){
   try {
     var path = decodeURIComponent(el.getAttribute('data-path'));
-    if (AndroidBridge.setModelPath(path)) {
-      document.getElementById('llmModelName').textContent = path.split('/').pop();
+    var ok = curScanLang === 'en' ? AndroidBridge.setModelPathEn(path) : AndroidBridge.setModelPathZh(path);
+    if (ok) {
+      var nm = document.getElementById(curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh');
+      if (nm) nm.textContent = path.split('/').pop();
       document.getElementById('llmModelList').style.display = 'none';
-      try { localStorage.setItem('llm_model_path', path); } catch(e) {}
+      try { localStorage.setItem(curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', path); } catch(e) {}
     } else {
       alert('无法读取该文件，请检查「所有文件访问」权限是否已开启');
     }
@@ -713,9 +809,10 @@ function chooseModel(el){
 function inputModelPath(){
   var v = document.getElementById('llmPathInput').value.trim();
   if (!v) { alert('请输入模型完整路径'); return; }
-  if (AndroidBridge.setModelPath(v)) {
-    document.getElementById('llmModelName').textContent = v.split('/').pop();
-    try { localStorage.setItem('llm_model_path', v); } catch(e) {}
+  var ok = curScanLang === 'en' ? AndroidBridge.setModelPathEn(v) : AndroidBridge.setModelPathZh(v);
+  if (ok) {
+    document.getElementById(curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh').textContent = v.split('/').pop();
+    try { localStorage.setItem(curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', v); } catch(e) {}
   } else {
     alert('路径无效或无法读取，请确认: 1.路径以.gguf结尾 2.文件存在 3.已开启「所有文件访问」');
   }
@@ -774,16 +871,19 @@ function runLlmPro(){
         if (lt) lt.textContent = lv === 'Human' ? '人类写作' : lv === 'Maybe AI' ? '可能含AI' : lv === 'Uncertain' ? '不确定' : 'AI生成';
       }
     }
-    // --- 报告卡片 ---
+    // ===== 类型感知深度分 (v8.2) =====
+    var tScore = typeAwareScore({ppl: ppl, pred: pred, top5: top5, rare: rare, seg_std: segStd, llmScore: score, lang: detectLang()});
+    // --- 报告卡片 (渲染到 #result, 覆盖快速检测) ---
     function barHtml(name, val, txt, color) {
       return '<div class="detail-item"><div class="detail-name">' + name + '</div>' +
         '<div class="detail-bar"><div class="detail-bar-fill" style="width:' + val + '%;background:' + color + '"></div></div>' +
         '<div class="detail-val">' + txt + '</div></div>';
     }
     function col(v) { return v < 30 ? '#4caf50' : v < 55 ? '#ffc107' : v < 75 ? '#ff9800' : '#f44336'; }
+    var tName = TYPE_META[curType] ? TYPE_META[curType].name : '';
     var html = '<div style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:6px">' +
       '<b style="color:var(--accent)">🧠 LLM 深度检测报告</b>' +
-      '<span style="color:#888;font-size:9px;margin-left:6px">评估 ' + tokens + ' tokens · ' + segCnt + ' 段</span></div>' +
+      '<span style="color:#888;font-size:9px;margin-left:6px">' + tName + ' · 评估 ' + tokens + ' tokens · ' + segCnt + ' 段</span></div>' +
       '<div class="detail-list">' +
       barHtml('困惑度', d1, ppl.toFixed(1) + ' · ' + pplTxt, col(d1)) +
       barHtml('top1可预测', d2, (pred * 100).toFixed(0) + '% · ' + predTxt, col(d2)) +
@@ -792,13 +892,43 @@ function runLlmPro(){
       barHtml('罕见词率', d4, (rare * 100).toFixed(1) + '% · ' + rareTxt, col(d4)) +
       '</div>';
     if (fused !== null) {
+      var baseScore = tScore !== score ? tScore : score;
+      var fused2 = Math.round((0.55 * r.aiProbability + 0.45 * baseScore) * 10) / 10;
+      // 更新仪表盘 (覆盖快速结果)
+      var circ = 2 * Math.PI * 52;
+      var fg2 = document.getElementById('fg');
+      fg2.setAttribute('stroke-dashoffset', circ * (1 - fused2 / 100));
+      var colors2 = ['#4caf50','#ffc107','#ff9800','#f44336','#f44336'];
+      var ci2 = fused2 < 25 ? 0 : fused2 < 40 ? 1 : fused2 < 60 ? 2 : fused2 < 80 ? 3 : 4;
+      fg2.setAttribute('stroke', colors2[ci2]);
+      document.getElementById('pct').textContent = fused2 + '%';
+      document.getElementById('pct').style.color = colors2[ci2];
+      var lb2 = document.getElementById('levelBadge');
+      var lt2 = document.getElementById('levelText');
+      var lv2 = fused2 < 25 ? 'Human' : fused2 < 40 ? 'Maybe AI' : fused2 < 60 ? 'Uncertain' : fused2 < 80 ? 'Likely AI' : 'Very Likely AI';
+      lb2.textContent = lv2;
+      lb2.className = 'level-badge ' + (lv2 === 'Human' ? 'level-human' : lv2 === 'Maybe AI' ? 'level-maybe' : lv2 === 'Uncertain' ? 'level-uncertain' : 'level-likely');
+      lt2.textContent = lv2 === 'Human' ? '人类写作' : lv2 === 'Maybe AI' ? '可能含AI' : lv2 === 'Uncertain' ? '不确定' : 'AI生成';
       html += '<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:#00e5ff11;font-size:10px;line-height:1.6;color:var(--text)">' +
-        '⚡ <b>融合结论</b>：快速检测 ' + r.aiProbability + '% × 0.55 + LLM深度分 ' + score.toFixed(1) + ' × 0.45 = <b style="color:var(--accent)">' + fused + '% AI 概率</b></div>';
+        '⚡ <b>融合结论</b>：快速检测 ' + r.aiProbability + '% × 0.55 + LLM深度分 ' + baseScore + ' × 0.45 = <b style="color:var(--accent)">' + fused2 + '% AI 概率</b>' +
+        (curType !== 'general' ? '（基于' + tName + '类型指纹归一化）' : '') + '</div>';
     }
     html += '<div style="margin-top:6px;font-size:9px;color:#666;line-height:1.6">' +
       '💡 原理：让大模型逐词预测你的文本——AI 写的文章 AI 一猜一个准（困惑度低、可预测率高）；人类写作难以预测（困惑度高、波动大）。' +
-      '困惑度越高、波动越大、罕见词越多 → 越像人类。</div>';
-    box.innerHTML = html;
+      '困惑度越高、波动越大、罕见词越多 → 越像人类。深度检测结果已覆盖上方快速检测报告。</div>';
+    // 覆盖快速检测报告区
+    var res = document.getElementById('result');
+    var oldDetails = document.getElementById('details');
+    if (res && oldDetails) {
+      oldDetails.innerHTML = html;
+      var flags = document.getElementById('flags');
+      if (flags) flags.style.display = 'none';
+      var stats = document.getElementById('stats');
+      if (stats) stats.style.display = 'none';
+      res.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+    // llmResult 区显示简要确认
+    box.innerHTML = '✅ 深度检测完成（' + tName + '）— 融合 AI 概率 ' + (fused !== null ? fused + '%' : score + '分') + '，完整报告已生成';
     box.style.display = 'block';
     document.getElementById('llmProgress').style.display = 'none';
   };

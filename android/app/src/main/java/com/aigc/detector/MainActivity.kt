@@ -270,11 +270,19 @@ class MainActivity : Activity() {
 
         /** 已选择模型? */
         @JavascriptInterface
-        fun hasModel(): Boolean = modelPath != null
+        fun hasModel(): Boolean = modelPathZh != null || modelPathEn != null
 
         /** 模型名 */
         @JavascriptInterface
-        fun modelName(): String = modelPath?.let { File(it).name } ?: ""
+        fun modelName(): String = (if (curModelLang == "en") modelPathEn else modelPathZh)?.let { File(it).name } ?: ""
+
+        /** 中文模型名 */
+        @JavascriptInterface
+        fun modelNameZh(): String = modelPathZh?.let { File(it).name } ?: ""
+
+        /** 英文模型名 */
+        @JavascriptInterface
+        fun modelNameEn(): String = modelPathEn?.let { File(it).name } ?: ""
 
         /** 从系统文件选择器选 (fallback) */
         @JavascriptInterface
