@@ -131,6 +131,27 @@ class MainActivity : Activity() {
         return true
     }
 
+    /** 后台预加载模型 (不阻塞 UI, 状态机管理) */
+    private fun preloadModel() {
+        val p = modelPath ?: return
+        if (modelState == 1) return          // 已在加载
+        modelState = 1
+        Thread {
+            try {
+                val ok = LlmProEngine.nativeInit(p)
+                modelState = if (ok) 2 else 3
+                runOnUiThread {
+                    webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded($ok);", null)
+                }
+            } catch (e: Throwable) {
+                modelState = 3
+                runOnUiThread {
+                    webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded(false);", null)
+                }
+            }
+        }.start()
+    }
+
     private fun notifyModelChosen(name: String) {
         runOnUiThread {
             webView.evaluateJavascript(
@@ -246,27 +267,6 @@ class MainActivity : Activity() {
         /** 模型状态: 0=无 1=加载中 2=就绪 3=失败 */
         @JavascriptInterface
         fun modelState(): Int = this@MainActivity.modelState
-
-        /** 后台预加载模型 (不阻塞 UI, 状态机管理) */
-        private fun preloadModel() {
-            val p = modelPath ?: return
-            if (modelState == 1) return          // 已在加载
-            modelState = 1
-            Thread {
-                try {
-                    val ok = LlmProEngine.nativeInit(p)
-                    modelState = if (ok) 2 else 3
-                    runOnUiThread {
-                        webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded($ok);", null)
-                    }
-                } catch (e: Throwable) {
-                    modelState = 3
-                    runOnUiThread {
-                        webView.evaluateJavascript("window.__llmLoaded && window.__llmLoaded(false);", null)
-                    }
-                }
-            }.start()
-        }
 
         /** 已选择模型? */
         @JavascriptInterface
