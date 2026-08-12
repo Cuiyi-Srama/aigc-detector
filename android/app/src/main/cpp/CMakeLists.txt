@@ -25,4 +25,4 @@ target_include_directories(aigcllm PRIVATE
     llama-cpp/include
     llama-cpp/ggml/include
 )
-target_link_libraries(aigcllm PRIVATE llama)
+target_link_libraries(aigcllm PRIVATE llama log)
