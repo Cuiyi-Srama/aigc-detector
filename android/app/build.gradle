@@ -23,6 +23,17 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            if (System.getenv('KEYSTORE_BASE64') != null) {
+                storeFile file("${System.getenv('RUNNER_TEMP') ?: '/tmp'}/aigc-release.keystore")
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -31,17 +42,6 @@ android {
                 signingConfig signingConfigs.release
             } else {
                 signingConfig signingConfigs.debug
-            }
-        }
-    }
-
-    signingConfigs {
-        release {
-            if (System.getenv('KEYSTORE_BASE64') != null) {
-                storeFile file("${System.getenv('RUNNER_TEMP') ?: '/tmp'}/aigc-release.keystore")
-                storePassword System.getenv('KEYSTORE_PASSWORD')
-                keyAlias System.getenv('KEY_ALIAS')
-                keyPassword System.getenv('KEY_PASSWORD')
             }
         }
     }
