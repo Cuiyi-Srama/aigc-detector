@@ -370,13 +370,14 @@ class MainActivity : Activity() {
             val p = modelPath ?: run { notifyJs("", "未选择模型"); return }
             busy = true
             // 看门狗: 300s 无响应则中止 native 并重置 busy, 防止卡死后永久拒绝检测
-            val watchdog = Handler(Looper.getMainLooper()).postDelayed({
+            val watchdog = Runnable {
                 if (busy) {
                     LlmProEngine.nativeAbort()
                     busy = false
                     notifyJs("", "检测超时(5分钟)，已自动中止并重置，可重新检测")
                 }
-            }, 300_000L)
+            }
+            Handler(Looper.getMainLooper()).postDelayed(watchdog, 300_000L)
             Thread {
                 try {
                     val ok = LlmProEngine.nativeInit(p)
