@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <pthread.h>
+#include <atomic>
 #include "llama.h"
 
 #define TAG "LlmProEngine"
@@ -23,6 +24,7 @@ static const int N_BATCH = 512;   // 每批 decode 的 token 数
 static const int SEG = 128;       // 分段困惑度的段长 (token)
 
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
+static std::atomic<bool> g_abort{false};   // 看门狗中止标志 (不持锁, 原子安全)
 
 static void unload_locked() {
     if (g_ctx) { llama_free(g_ctx); g_ctx = nullptr; }
@@ -69,6 +71,12 @@ Java_com_aigc_detector_LlmProEngine_nativeUnload(JNIEnv *, jobject) {
     pthread_mutex_unlock(&g_mutex);
 }
 
+// 看门狗中止: 设置原子标志, 正在运行的 nativeAnalyze 在下一批循环退出 (不持锁, 可随时调用)
+extern "C" JNIEXPORT void JNICALL
+Java_com_aigc_detector_LlmProEngine_nativeAbort(JNIEnv *, jobject) {
+    g_abort.store(true);
+}
+
 // 返回 double[10]:
 //   [0] 全局困惑度 ppl
 //   [1] top1可预测率 pred_rate
@@ -85,6 +93,7 @@ extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_com_aigc_detector_LlmProEngine_nativeAnalyze(JNIEnv * env, jobject, jstring text, jobject progress) {
     double zeros[10] = {0,0,0,0,0,0,0,0,0,0};
     jdoubleArray arr = env->NewDoubleArray(10);
+    g_abort.store(false);   // 新一轮分析前重置中止标志
 
     pthread_mutex_lock(&g_mutex);
     if (!is_loaded()) { pthread_mutex_unlock(&g_mutex); env->SetDoubleArrayRegion(arr, 0, 10, zeros); return arr; }
@@ -122,6 +131,12 @@ Java_com_aigc_detector_LlmProEngine_nativeAnalyze(JNIEnv * env, jobject, jstring
     seg_cnt.assign(n_seg, 0.0);
 
     for (int off = 0; off < n; off += N_BATCH) {
+        if (g_abort.load()) {   // 看门狗中止: 放弃剩余批次
+            LOGE("分析被看门狗中止 at %d/%d", off, n);
+            pthread_mutex_unlock(&g_mutex);
+            env->SetDoubleArrayRegion(arr, 0, 10, zeros);
+            return arr;
+        }
         const int bn = (n - off < N_BATCH) ? (n - off) : N_BATCH;
         llama_batch batch = llama_batch_init(bn, 0, 1);
         for (int i = 0; i < bn; i++) {
