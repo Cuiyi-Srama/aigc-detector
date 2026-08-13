@@ -837,6 +837,9 @@ function runLlmPro(){
   box.style.display = 'block';
   box.textContent = '⏳ LLM 推理中... (4B模型约1-3分钟, 请勿退出)';
   window.__llmResult = function(result, error){
+    // 防御: 无论成功失败, 确保输入框可用 (防止意外禁用后无法重新导入文本)
+    var inGuard = document.getElementById('input');
+    if (inGuard) { inGuard.disabled = false; inGuard.readOnly = false; }
     if (error) { box.textContent = '❌ ' + error; return; }
     var p = result.split('|');
     var ppl = parseFloat(p[0]), pred = parseFloat(p[1]), rank = parseFloat(p[2]);
