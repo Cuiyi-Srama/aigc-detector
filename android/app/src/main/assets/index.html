@@ -768,7 +768,7 @@ function requestPerm(){
 }
 
 function pickLlmModel(lang){
-  var curScanLang = lang || 'zh';
+  window.curScanLang = lang || 'zh';
   if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
   if (!AndroidBridge.hasAllFilesAccess()) {
     document.getElementById('llmPermWarn').style.display = 'block';
@@ -800,12 +800,12 @@ function pickLlmModel(lang){
 function chooseModel(el){
   try {
     var path = decodeURIComponent(el.getAttribute('data-path'));
-    var ok = curScanLang === 'en' ? AndroidBridge.setModelPathEn(path) : AndroidBridge.setModelPathZh(path);
+    var ok = window.curScanLang === 'en' ? AndroidBridge.setModelPathEn(path) : AndroidBridge.setModelPathZh(path);
     if (ok) {
-      var nm = document.getElementById(curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh');
+      var nm = document.getElementById(window.curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh');
       if (nm) nm.textContent = path.split('/').pop();
       document.getElementById('llmModelList').style.display = 'none';
-      try { localStorage.setItem(curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', path); } catch(e) {}
+      try { localStorage.setItem(window.curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', path); } catch(e) {}
     } else {
       alert('无法读取该文件，请检查「所有文件访问」权限是否已开启');
     }
@@ -815,10 +815,10 @@ function chooseModel(el){
 function inputModelPath(){
   var v = document.getElementById('llmPathInput').value.trim();
   if (!v) { alert('请输入模型完整路径'); return; }
-  var ok = curScanLang === 'en' ? AndroidBridge.setModelPathEn(v) : AndroidBridge.setModelPathZh(v);
+  var ok = window.curScanLang === 'en' ? AndroidBridge.setModelPathEn(v) : AndroidBridge.setModelPathZh(v);
   if (ok) {
-    document.getElementById(curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh').textContent = v.split('/').pop();
-    try { localStorage.setItem(curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', v); } catch(e) {}
+    document.getElementById(window.curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh').textContent = v.split('/').pop();
+    try { localStorage.setItem(window.curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', v); } catch(e) {}
   } else {
     alert('路径无效或无法读取，请确认: 1.路径以.gguf结尾 2.文件存在 3.已开启「所有文件访问」');
   }
