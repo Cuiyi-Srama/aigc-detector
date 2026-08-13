@@ -935,7 +935,7 @@ async function dsPredictNext(prefix, nextStr, apiKey, model){
   var resp = await fetch(DS_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-    body: JSON.stringify({ model: model, messages: [{role:'user', content: prefix}], max_tokens:1, temperature:0, logprobs:true, top_logprobs:20 })
+    body: JSON.stringify({ model: model, messages: [{role:'user', content: prefix}], max_tokens:1, temperature:0, logprobs:true, top_logprobs:20, thinking: {type:'disabled'} })
   });
   if (!resp.ok) { var e = await resp.json().catch(function(){return {}}); throw new Error((e.error && e.error.message) || ('HTTP ' + resp.status)); }
   var d = await resp.json();
