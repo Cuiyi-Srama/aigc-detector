@@ -787,26 +787,40 @@ window.addEventListener('load',renderHistory);
   Object.defineProperty(window, 'curType', { get: function(){ return curType; } });
 })();
 
+function runLocalDeep(){
+  var lang = detectLang();
+  curModelLangRef = lang;
+  var st = AndroidBridge.selectModel(lang);
+  if (st === 0) { alert((lang === 'zh' ? '请先选择中文模型' : '请先选择英文模型') + '：点击「选中文/选英文」扫描 GGUF 文件'); return; }
+  if (st === 1) { alert((lang === 'zh' ? '中文' : '英文') + '模型加载中，请稍候几秒再试...'); return; }
+  detect();
+  runLlmPro();
+}
+
 function deepDetect(){
   var txt = document.getElementById('input').value.trim();
   if (txt.length < 100) { alert('请先输入至少100字文本'); return; }
-  // ① 优先: APK 本地模型 (离线免费)
-  if (window.AndroidBridge && AndroidBridge.hasModel && AndroidBridge.hasModel()) {
-    var lang = detectLang();
-    curModelLangRef = lang;
-    var st = AndroidBridge.selectModel(lang);
-    if (st === 0) { alert((lang === 'zh' ? '请先选择中文模型' : '请先选择英文模型') + '：点击「选中文/选英文」扫描 GGUF 文件'); return; }
-    if (st === 1) { alert((lang === 'zh' ? '中文' : '英文') + '模型加载中，请稍候几秒再试...'); return; }
-    detect();
-    runLlmPro();
+  // ① 在线 API 优先 (效果更好, DeepSeek v4 强于本地模型)
+  var key = getApiKey();
+  if (key) {
+    var calib = loadCalib();
+    if (calib && calib.n && calib.n.ai >= 5) { runApiDeep(); return; }
+    // 已配 Key 但未校准: 有本地模型则回退本地, 否则引导校准
+    if (window.AndroidBridge && AndroidBridge.hasModel && AndroidBridge.hasModel()) {
+      runLocalDeep();
+      return;
+    }
+    var cr = document.getElementById('apiCalibRow');
+    if (cr) cr.style.display = 'block';
+    alert('已保存 API Key，但尚未完成校准。请点击「开始校准」完成首次校准（约10分钟，可中断续跑）。');
     return;
   }
-  // ② 在线 API 模式 (DeepSeek)
-  if (getApiKey()) { runApiDeep(); return; }
+  // ② 本地模型
+  if (window.AndroidBridge && AndroidBridge.hasModel && AndroidBridge.hasModel()) { runLocalDeep(); return; }
   // ③ 均未配置: 引导
   var ab = document.getElementById('apiBar');
   if (ab) ab.style.display = 'block';
-  alert('深度检测需要二选一：\n① APK 版（本机大模型，离线）\n② 在线模式（DeepSeek API，见「在线检测」面板配置教程）');
+  alert('深度检测需要二选一：\n① 在线模式（DeepSeek API，推荐，见「在线检测」面板配置教程）\n② APK 版本地模型（离线）');
 }
 
 function requestPerm(){
@@ -1013,6 +1027,12 @@ async function runApiCalibration(){
     try {
       var f = await dsSampleFeatures(s.x, apiKey, model, null, 40);
       if (f) {
+        var rec = { i: i, t: s.t, f: f };
+        if (s.g === 'ai') { calib.ai.push(rec); feats.ai[i] = f; } else { calib.hu.push(rec); feats.hu[i] = f; }
+        saveCalib(calib);
+        done.add(i);
+      }
+      if (f) {
         var rec = { i: i, f: f };
         if (s.g === 'ai') { calib.ai.push(rec); feats.ai[i] = f; } else { calib.hu.push(rec); feats.hu[i] = f; }
         saveCalib(calib);
@@ -1020,7 +1040,7 @@ async function runApiCalibration(){
       }
     } catch (e) { /* 单篇失败跳过 */ }
   }
-  // 拟合分布 (mu/sigma)
+  // 拟合分布 (mu/sigma): 全局 + 按类型分组
   function fit(arr, key){
     var mu = 0; for (var k = 0; k < arr.length; k++) mu += arr[k][key]; mu = arr.length ? mu / arr.length : 0;
     var sd = 0; for (var k = 0; k < arr.length; k++) sd += (arr[k][key] - mu) * (arr[k][key] - mu);
@@ -1029,11 +1049,24 @@ async function runApiCalibration(){
   }
   var keys = ['ppl','pred','top5','rare','seg_std'];
   var aiArr = calib.ai.map(function(x){return x.f}), huArr = calib.hu.map(function(x){return x.f});
-  var m = { model: model, n: { ai: aiArr.length, hu: huArr.length }, t: Date.now(), ai: {}, hu: {} };
+  var m = { model: model, n: { ai: aiArr.length, hu: huArr.length }, t: Date.now(), ai: {}, hu: {}, types: {} };
   for (var k = 0; k < keys.length; k++) { m.ai[keys[k]] = fit(aiArr, keys[k]); m.hu[keys[k]] = fit(huArr, keys[k]); }
+  // 按类型分组 (每类 AI>=5 且人类>=5 才生成类型参数)
+  var byType = {};
+  calib.ai.forEach(function(x){ (byType[x.t] = byType[x.t] || { ai: [], hu: [] }).ai.push(x.f); });
+  calib.hu.forEach(function(x){ (byType[x.t] = byType[x.t] || { ai: [], hu: [] }).hu.push(x.f); });
+  for (var t in byType) {
+    var grp = byType[t];
+    if (grp.ai.length >= 5 && grp.hu.length >= 5) {
+      var tm = { n: { ai: grp.ai.length, hu: grp.hu.length }, ai: {}, hu: {} };
+      for (var k2 = 0; k2 < keys.length; k2++) { tm.ai[keys[k2]] = fit(grp.ai, keys[k2]); tm.hu[keys[k2]] = fit(grp.hu, keys[k2]); }
+      m.types[t] = tm;
+    }
+  }
+  var typeNote = Object.keys(m.types).length;
   saveCalib(m);
   localStorage.removeItem(DS_CALIB_PROG);
-  st.textContent = '校准完成（AI ' + m.n.ai + ' 篇 / 人类 ' + m.n.hu + ' 篇）。可开始在线检测。';
+  st.textContent = '校准完成（AI ' + m.n.ai + ' 篇 / 人类 ' + m.n.hu + ' 篇' + (typeNote ? '，' + typeNote + ' 个类型已建立指纹' : '') + '）。可开始在线检测。';
   var cr = document.getElementById('apiCalibRow');
   cr.style.borderColor = 'var(--g)'; cr.style.background = '#4caf5011';
   alert('校准完成：AI ' + m.n.ai + ' 篇 / 人类 ' + m.n.hu + ' 篇。在线检测精度已就绪。');
@@ -1082,8 +1115,18 @@ async function runApiDeep(){
     });
     pg.style.display = 'none';
     if (!f) { box.textContent = '❌ 采样失败（样本不足），请检查 Key 是否有效'; return; }
-    var score = dsBayesScore(f, calib);
-    renderDeepReport({ ppl: f.ppl, pred: f.pred, rank: 0.5, score: score, tokens: f.tokens, segStd: f.seg_std, rare: f.rare, top5: f.top5, segCnt: 6, isApi: true, engine: model });
+    // 类型指纹优先, 样本不足回退全局
+    var params = calib;
+    var typeNote = '';
+    var tMeta = (window.TYPE_META && TYPE_META[curType]) ? TYPE_META[curType].name : '';
+    if (calib.types && calib.types[curType] && calib.types[curType].n.ai >= 5 && calib.types[curType].n.hu >= 5) {
+      params = calib.types[curType];
+      typeNote = '（基于' + tMeta + '类型指纹，N=' + (params.n.ai + params.n.hu) + '）';
+    } else if (calib.types && calib.types[curType]) {
+      typeNote = '（' + tMeta + '样本不足，回退通用校准）';
+    }
+    var score = dsBayesScore(f, params);
+    renderDeepReport({ ppl: f.ppl, pred: f.pred, rank: 0.5, score: score, tokens: f.tokens, segStd: f.seg_std, rare: f.rare, top5: f.top5, segCnt: 6, isApi: true, engine: model, typeNote: typeNote });
   } catch (err) {
     pg.style.display = 'none';
     box.textContent = '❌ 在线检测失败：' + err.message + '（请检查 Key 与网络，CORS 需浏览器直连 api.deepseek.com）';
@@ -1094,7 +1137,7 @@ async function runApiDeep(){
 function renderDeepReport(m){
   var ppl = m.ppl, pred = m.pred, score = m.score, tokens = m.tokens;
   var segStd = m.segStd, rare = m.rare, top5 = m.top5, segCnt = m.segCnt;
-  var isApi = !!m.isApi, engine = m.engine || '';
+  var isApi = !!m.isApi, engine = m.engine || '', typeNote = m.typeNote || '';
   var box = document.getElementById('llmResult');
   function dim(v, a, b, n1, n2, n3) { return v <= a ? n1 : v <= b ? n2 : n3; }
   var pplTxt = dim(ppl, 8, 20, 'AI特征明显（高度可预测）', '可预测性中等', '接近人类（难以预测）');
@@ -1155,7 +1198,7 @@ function renderDeepReport(m){
   if (fused2 !== null) {
     html += '<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:#00e5ff11;font-size:10px;line-height:1.6;color:var(--text)">' +
       '<b>融合结论</b>：快速检测 ' + r.aiProbability + '%（×0.55）+ ' + (isApi ? '在线深度分' : 'LLM深度分') + ' ' + baseScore + '（×0.45）→ <b style="color:var(--accent)">' + fused2 + '% AI 生成概率</b>' +
-      (isApi ? '（DeepSeek 采样估计）' : (curType !== 'general' ? '（基于' + tName + '类型指纹校准）' : '')) +
+      (isApi ? ('（DeepSeek 采样估计' + (typeNote || '') + '）') : (curType !== 'general' ? '（基于' + tName + '类型指纹校准）' : '')) +
       (baseScore <= 10 ? '<br><span style="color:#999">注：深度分极低 = 大模型几乎无法预测该文本，属强人类写作特征，并非检测失败</span>' : '') + '</div>';
   }
   html += '<div style="margin-top:6px;font-size:9px;color:#666;line-height:1.6">' +
