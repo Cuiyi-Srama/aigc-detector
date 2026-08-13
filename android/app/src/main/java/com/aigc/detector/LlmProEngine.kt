@@ -12,6 +12,9 @@ object LlmProEngine {
     external fun nativeInit(modelPath: String): Boolean
     @JvmStatic
     external fun nativeUnload()
+    /** 看门狗中止: 通知 native 放弃当前分析 (原子标志, 线程安全) */
+    @JvmStatic
+    external fun nativeAbort()
     /** 返回 double[10]: {ppl, pred_rate, rank_pct, llm_score, tokens, seg_std, rare_rate, top5_rate, seg_count, avg_nll}; progress 可为 null */
     @JvmStatic
     external fun nativeAnalyze(text: String, progress: ProgressListener?): DoubleArray
