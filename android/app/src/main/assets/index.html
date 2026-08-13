@@ -738,6 +738,12 @@ window.addEventListener('load',renderHistory);
       if (nm && AndroidBridge.hasModel()) nm.textContent = AndroidBridge.modelName();
     }
   };
+  // ===== 暴露给全局 (inline onclick 与 IIFE 外函数使用) =====
+  window.setType = setType;
+  window.detectLang = detectLang;
+  window.typeAwareScore = typeAwareScore;
+  window.TYPE_META = TYPE_META;
+  Object.defineProperty(window, 'curType', { get: function(){ return curType; } });
 })();
 
 function deepDetect(){
