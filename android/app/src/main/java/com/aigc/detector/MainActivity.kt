@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.JavascriptInterface
@@ -367,11 +369,19 @@ class MainActivity : Activity() {
             }
             val p = modelPath ?: run { notifyJs("", "未选择模型"); return }
             busy = true
+            // 看门狗: 300s 无响应则中止 native 并重置 busy, 防止卡死后永久拒绝检测
+            val watchdog = Handler(Looper.getMainLooper()).postDelayed({
+                if (busy) {
+                    LlmProEngine.nativeAbort()
+                    busy = false
+                    notifyJs("", "检测超时(5分钟)，已自动中止并重置，可重新检测")
+                }
+            }, 300_000L)
             Thread {
                 try {
                     val ok = LlmProEngine.nativeInit(p)
                     if (!ok) {
-                        notifyJs("", "模型加载失败，请确认 GGUF 文件有效")
+                        if (busy) notifyJs("", "模型加载失败，请确认 GGUF 文件有效")
                         return@Thread
                     }
                     val r = LlmProEngine.analyze(text) { done, total ->
@@ -381,16 +391,17 @@ class MainActivity : Activity() {
                         }
                     }
                     if (r == null) {
-                        notifyJs("", "推理失败或文本过短")
+                        if (busy) notifyJs("", "推理失败或文本过短")
                     } else {
-                        notifyJs(String.format("%.1f|%.3f|%.3f|%.1f|%d|%.3f|%.3f|%.3f|%d|%.3f",
+                        if (busy) notifyJs(String.format("%.1f|%.3f|%.3f|%.1f|%d|%.3f|%.3f|%.3f|%d|%.3f",
                             r.ppl, r.predRate, r.rankPct, r.llmScore, r.tokens,
                             r.segStd, r.rareRate, r.top5Rate, r.segCount, r.avgNll), "")
                     }
                 } catch (e: Throwable) {
-                    notifyJs("", e.message ?: "未知错误")
+                    if (busy) notifyJs("", e.message ?: "未知错误")
                 } finally {
                     busy = false
+                    Handler(Looper.getMainLooper()).removeCallbacks(watchdog)
                 }
             }.start()
         }
