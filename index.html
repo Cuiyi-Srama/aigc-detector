@@ -14,8 +14,11 @@ h1{text-align:center;font-size:1.4rem;margin:8px 0 2px;color:var(--accent)}
 textarea{width:100%;height:140px;background:var(--card);color:var(--text);border:2px solid var(--border);border-radius:12px;padding:12px;font-size:14px;resize:vertical;outline:none;transition:border .2s;line-height:1.7}
 textarea:focus{border-color:var(--accent)}
 .btn-row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.type-btn{background:var(--card);border:1px solid var(--border);color:#aaa;border-radius:14px;padding:4px 10px;font-size:9.5px;cursor:pointer}
+.type-btn.active{background:linear-gradient(135deg,#7c4dff33,#00e5ff22);border-color:var(--accent);color:var(--accent);font-weight:600}
 .btn{padding:10px 16px;border-radius:8px;border:none;font-size:13px;cursor:pointer;font-weight:600}
 .btn-detect{background:var(--accent);color:#000;flex:1}
+.btn-llm{background:linear-gradient(135deg,#7c4dff,#00bcd4);color:#fff;flex:1}
 .btn-clear{background:var(--border);color:var(--text)}
 .btn-sample{background:transparent;color:var(--accent);border:1px solid var(--accent);font-size:10px;padding:5px 10px}
 .result{margin-top:12px;display:none}
@@ -26,7 +29,8 @@ textarea:focus{border-color:var(--accent)}
 .gauge circle{fill:none;stroke-width:6}
 .gauge .bg{stroke:var(--border)}
 .gauge .fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset .8s,stroke .5s}
-.gauge-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;font-weight:700}
+.gauge-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;font-weight:700;text-align:center;line-height:1.15}
+.gauge-label{font-size:7px;font-weight:400;color:#888;white-space:nowrap}
 .level-badge{padding:4px 10px;border-radius:20px;font-weight:700;font-size:12px}
 .level-human{background:#4caf5033;color:var(--g)}
 .level-maybe{background:#ffc10733;color:var(--y)}
@@ -72,22 +76,76 @@ textarea:focus{border-color:var(--accent)}
 <body>
 <div class="app">
 <h1>AIGC 文本检测 v8</h1>
-<div class="subtitle">17维 · 6大模型指纹 · 论证脚手架 · LLM Pro 扩展 · 纯本地离线</div>
+<div class="subtitle">基于文本统计特征的 AI 生成内容检测 · 纯本地离线运行</div>
+<div style="display:flex;align-items:center;gap:5px;margin:8px 0 6px;flex-wrap:wrap">
+  <span style="font-size:10px;color:#888">文章类型</span>
+  <button class="type-btn active" id="t-general" onclick="setType('general')">通用</button>
+  <button class="type-btn" id="t-academic" onclick="setType('academic')">学术论文</button>
+  <button class="type-btn" id="t-news" onclick="setType('news')">新闻时评</button>
+  <button class="type-btn" id="t-literature" onclick="setType('literature')">文学作品</button>
+  <button class="type-btn" id="t-web" onclick="setType('web')">网络文章</button>
+  <button class="type-btn" id="t-formal" onclick="setType('formal')">公文演讲</button>
+</div>
+<div id="typeTip" style="font-size:9px;color:#666;margin-bottom:6px;padding:4px 8px;border-left:2px solid var(--border);display:none"></div>
 <textarea id="input" placeholder="粘贴文本（至少100字，越长越准）..."></textarea>
 <div class="btn-row">
-  <button class="btn btn-detect" onclick="detect()">开始检测</button>
+  <button class="btn btn-detect" onclick="detect()">快速检测</button>
+  <button class="btn btn-llm" onclick="deepDetect()">深度检测</button>
   <button class="btn btn-clear" onclick="clearAll()">清空</button>
 </div>
+<div style="font-size:9px;color:#666;margin-bottom:6px;padding:4px 8px;border-left:2px solid var(--border)">
+  快速检测：基于文本统计特征，即时返回结果 · 深度检测：需加载本地大模型，约1-3分钟（视设备性能），结果更可靠
+</div>
 <div class="btn-row" style="gap:4px">
-  <button class="btn btn-sample" onclick="loadSample('human')">人类（背影）</button>
-  <button class="btn btn-sample" onclick="loadSample('ai')">通用AI</button>
-  <button class="btn btn-sample" onclick="loadSample('ds')">DeepSeek</button>
-  <button class="btn btn-sample" onclick="loadSample('mix')">人机混合</button>
+  <button class="btn btn-sample" onclick="loadSample('human')">样例·人类（背影）</button>
+  <button class="btn btn-sample" onclick="loadSample('ai')">样例·通用AI</button>
+  <button class="btn btn-sample" onclick="loadSample('ds')">样例·DeepSeek</button>
+  <button class="btn btn-sample" onclick="loadSample('mix')">样例·人机混合</button>
+</div>
+<div style="font-size:9px;color:#666;margin-bottom:6px;padding:4px 8px;border-left:2px solid var(--border)">
+  以上为<b>示例文本</b>：点击可载入样例，，仅用于对比查看检测器对不同写作风格的反应，<b>不构成对任何文章或作者的判定</b>
+</div>
+<div id="llmBar" style="display:none;margin:8px 0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+    <b style="font-size:11px;color:var(--accent)">深度检测模型</b>
+    <span style="font-size:10px;color:#888">🇨🇳 中文模型: <b id="llmModelNameZh" style="color:var(--text)">未选择</b></span>
+    <span style="flex:1"></span>
+    <button class="btn btn-sample" onclick="pickLlmModel('zh')">选中文</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px">
+    <span style="font-size:10px;color:#888">🇬🇧 英文模型: <b id="llmModelNameEn" style="color:var(--text)">未选择</b></span>
+    <span style="flex:1"></span>
+    <button class="btn btn-sample" onclick="pickLlmModel('en')">选英文</button>
+
+  </div>
+  <div id="llmReadyTip" style="display:none;margin-top:6px;padding:6px 8px;border:1px solid var(--g);border-radius:6px;background:#4caf5011;font-size:10px;color:#7ee787">
+    模型已就绪，可进行深度检测（基于困惑度与可预测率，结果自动融合到检测报告）
+  </div>
+  <div id="llmPermWarn" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--o);border-radius:6px;background:#ff980011;font-size:10px;color:#ffb74d">
+    ⚠️ 需要「所有文件访问」权限才能读取模型文件
+    <button class="btn btn-sample" onclick="requestPerm()" style="margin-left:6px">去开启</button>
+  </div>
+  <div id="llmModelList" style="display:none;margin-top:8px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></div>
+  <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <input id="llmPathInput" type="text" placeholder="或手动输入路径: /storage/emulated/0/Models/xxx.gguf"
+      style="flex:1;min-width:200px;background:#0a0a14;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:10px;outline:none">
+    <button class="btn btn-sample" onclick="inputModelPath()">确定</button>
+  </div>
+  <div id="llmProgress" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:6px">
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:#888;margin-bottom:4px">
+      <span id="llmStage">准备中...</span><span id="llmPct">0%</span>
+    </div>
+    <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+      <div id="llmBarFill" style="height:100%;width:0%;background:linear-gradient(90deg,#7c4dff,#00e5ff);border-radius:4px;transition:width .3s"></div>
+    </div>
+    <div id="llmEta" style="font-size:9px;color:#666;margin-top:3px"></div>
+  </div>
+  <div id="llmResult" style="font-size:10px;color:#7ee787;margin-top:6px;display:none"></div>
 </div>
 <div class="result" id="result">
   <div class="gauge-row">
-    <div class="gauge"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" id="fg" cx="60" cy="60" r="52"/></svg><div class="gauge-text" id="pct">0%</div></div>
-    <div><span class="level-badge" id="levelBadge">-</span><div style="font-size:22px;font-weight:700;margin-top:4px" id="levelText">-</div></div>
+    <div class="gauge"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" id="fg" cx="60" cy="60" r="52"/></svg><div class="gauge-text"><div id="pct">0%</div><div class="gauge-label">AI生成概率</div></div></div>
+    <div><span class="level-badge" id="levelBadge">-</span><div style="font-size:22px;font-weight:700;margin-top:4px" id="levelText">-</div><div id="levelSub" style="font-size:9px;color:#888;margin-top:3px">—</div></div>
   </div>
   <div class="detail-list" id="details"></div>
   <div class="flag-box" id="flags" style="display:none"></div>
@@ -100,9 +158,9 @@ textarea:focus{border-color:var(--accent)}
 </div>
 <div class="disclaimer">结果根据简易统计算法生成，仅供参考</div>
 <details class="model-panel">
-  <summary>🧠 LLM Pro 深度检测（可选扩展）— 困惑度 / 可预测率 / DetectGPT 扰动原理</summary>
+  <summary>深度检测（可选）— 困惑度 / 可预测率 / 扰动检测原理</summary>
   <div class="model-inner">
-    <p style="margin-bottom:8px;color:#aaa">网页版使用 17 维统计启发式（轻量）。如需 <b style="color:#00e5ff">真困惑度 + 可预测率</b> 深度检测（GPTZero 核心原理，基于 llama.cpp），推荐使用 <b>Python 桌面版</b>（CLI/GUI），支持加载本地 GGUF 模型：</p>
+    <p style="margin-bottom:8px;color:#aaa">快速检测基于文本统计特征，网页版可直接使用。深度检测需加载本地 GGUF 大模型（Android 版内置此功能），基于困惑度与可预测率分析（llama.cpp 实现）：</p>
     <div class="model-cmd">pip install llama-cpp-python<br>python3 aigc_detector.py -f 文本.txt --model 模型.gguf</div>
     <p style="margin:10px 0 6px;color:#aaa">可选模型（HuggingFace，国内用镜像 <b>hf-mirror.com</b>）：</p>
     <table class="model-table">
@@ -452,6 +510,7 @@ function detect(){
   b.textContent=r.level;
   b.className='level-badge '+(r.level==='Human'?'level-human':r.level.includes('Maybe')?'level-maybe':r.level==='Uncertain'?'level-uncertain':'level-likely');
   $('levelText').textContent=r.level==='Human'?'人类写作':r.level.includes('Maybe')?'可能含AI':r.level==='Uncertain'?'不确定':'AI生成';
+  const ls=$('levelSub'); if(ls){ls.textContent='AI生成概率 '+p+'%';ls.style.color=colors[ci];}
 
   $('details').innerHTML=r.details.map(d=>{
     const c=d.aiScore<30?'#4caf50':d.aiScore<55?'#ffc107':d.aiScore<75?'#ff9800':'#f44336';
@@ -476,6 +535,13 @@ function detect(){
     '<div class="stat-item"><div class="stat-val">'+(r.stats.metaphorCount||0)+'</div><div class="stat-label">比喻</div></div>'+
     '<div class="stat-item"><div class="stat-val">'+(r.language==='zh'?'中':'EN')+'</div><div class="stat-label">语言</div></div>';
 
+    window.detectResult = r;
+    // 已选模型时引导 LLM 融合
+    if (window.AndroidBridge && AndroidBridge.hasModel()) {
+      var lb = document.getElementById('llmResult');
+      lb.style.display = 'block';
+      lb.textContent = '基础检测完成。已加载模型，可进行深度检测（约1-3分钟）';
+    }
     saveHistory(r);
   }catch(e){
     alert('检测出错: '+e.message);
@@ -529,6 +595,365 @@ function exportHistory(){
 
 window.addEventListener('load',renderHistory);
 
+// ============ v8: LLM Pro 本机引擎 (APK WebView 桥) ============
+(function(){
+  if (window.AndroidBridge) {
+    var bar = document.getElementById('llmBar');
+    if (bar) bar.style.display = 'block';
+    if (AndroidBridge.hasAllFilesAccess && !AndroidBridge.hasAllFilesAccess()) {
+      document.getElementById('llmPermWarn').style.display = 'block';
+    }
+  }
+  var curModelLangRef = 'zh';
+  window.__llmModelName = function(name){
+    var lang = curModelLangRef || 'zh';
+    var el = document.getElementById(lang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh');
+    if (el && name) el.textContent = name;
+    var tip = document.getElementById('llmReadyTip');
+    if (tip) tip.style.display = 'block';
+  };
+  window.__llmLoaded = function(ok){
+    var tip = document.getElementById('llmReadyTip');
+    if (tip) {
+      tip.style.display = 'block';
+      tip.style.borderColor = ok ? 'var(--g)' : 'var(--r)';
+      tip.style.color = ok ? '#7ee787' : '#f88';
+      tip.innerHTML = ok
+        ? '模型已加载完成，可进行深度检测（困惑度/可预测率，约1-3分钟）'
+        : '❌ 模型加载失败，请确认 GGUF 文件有效';
+    }
+  };
+  // ===== v8.2 分类型指纹 =====
+  var curType = 'general';
+  // 类型指纹: {type: {human:{ppl:[mu,sigma],pred:[..],top5:[..],rare:[..],seg_std:[..]}, ai:{...}}}
+  // Qwen3-4B 实测218篇拟合 (type_fingerprints.json, 回测94.0%)
+  var __TYPE_FP__ = {"academic":{"en":{"dims":{"ppl":{"mu":12.9502,"sigma":12.3651,"dir":-1,"w":0.8605},"pred":{"mu":0.5582,"sigma":0.1253,"dir":1,"w":0.1},"top5":{"mu":0.7711,"sigma":0.104,"dir":1,"w":1.6772},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.3041,"sigma":0.2564,"dir":-1,"w":1.0838}},"b":-1.5724},"zh":{"dims":{"ppl":{"mu":9.4055,"sigma":3.571,"dir":-1,"w":0.6214},"pred":{"mu":0.5355,"sigma":0.0572,"dir":1,"w":0.1},"top5":{"mu":0.7848,"sigma":0.0494,"dir":1,"w":1.9921},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.2559,"sigma":0.1314,"dir":-1,"w":1.4647}},"b":0.0543}},"formal":{"en":{"dims":{"ppl":{"mu":9.0812,"sigma":4.963,"dir":-1,"w":1.1875},"pred":{"mu":0.5799,"sigma":0.152,"dir":1,"w":0.125},"top5":{"mu":0.8032,"sigma":0.098,"dir":1,"w":0.2508},"rare":{"mu":0.0001,"sigma":0.0005,"dir":-1,"w":0.0},"seg_std":{"mu":0.3603,"sigma":0.1542,"dir":-1,"w":0.4617}},"b":-0.4989},"zh":{"dims":{"ppl":{"mu":13.7709,"sigma":17.4238,"dir":-1,"w":0.8973},"pred":{"mu":0.5751,"sigma":0.1374,"dir":1,"w":0.6241},"top5":{"mu":0.7946,"sigma":0.139,"dir":1,"w":1.4905},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.3185,"sigma":0.229,"dir":-1,"w":2.047}},"b":-0.9086}},"literature":{"en":{"dims":{"ppl":{"mu":18.1617,"sigma":9.6767,"dir":-1,"w":0.9768},"pred":{"mu":0.4573,"sigma":0.1091,"dir":1,"w":0.075},"top5":{"mu":0.7036,"sigma":0.0886,"dir":1,"w":1.0279},"rare":{"mu":0.0,"sigma":0.0002,"dir":-1,"w":0.0},"seg_std":{"mu":0.3512,"sigma":0.1829,"dir":-1,"w":1.0353}},"b":-2.1442},"zh":{"dims":{"ppl":{"mu":24.5104,"sigma":11.1641,"dir":-1,"w":0.9397},"pred":{"mu":0.4259,"sigma":0.0714,"dir":1,"w":0.5916},"top5":{"mu":0.6607,"sigma":0.0795,"dir":1,"w":0.9843},"rare":{"mu":0.0,"sigma":0.0002,"dir":-1,"w":0.0},"seg_std":{"mu":0.3008,"sigma":0.1124,"dir":-1,"w":1.4909}},"b":-3.3207}},"news":{"en":{"dims":{"ppl":{"mu":9.6109,"sigma":2.7728,"dir":-1,"w":0.6878},"pred":{"mu":0.5085,"sigma":0.0497,"dir":1,"w":0.15},"top5":{"mu":0.7796,"sigma":0.0638,"dir":1,"w":0.8956},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.231,"sigma":0.2159,"dir":-1,"w":0.9139}},"b":-0.2859},"zh":{"dims":{"ppl":{"mu":13.9442,"sigma":9.2681,"dir":-1,"w":1.1622},"pred":{"mu":0.5029,"sigma":0.0691,"dir":1,"w":0.0753},"top5":{"mu":0.7455,"sigma":0.0979,"dir":1,"w":1.389},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.3388,"sigma":0.1581,"dir":-1,"w":1.1086}},"b":0.0349}},"web":{"en":{"dims":{"ppl":{"mu":10.8474,"sigma":4.6278,"dir":-1,"w":0.7212},"pred":{"mu":0.5134,"sigma":0.069,"dir":1,"w":0.125},"top5":{"mu":0.7739,"sigma":0.051,"dir":1,"w":1.3567},"rare":{"mu":0.0,"sigma":0.0,"dir":-1,"w":0.0},"seg_std":{"mu":0.1778,"sigma":0.1742,"dir":-1,"w":0.2095}},"b":-0.6598},"zh":{"dims":{"ppl":{"mu":30.4113,"sigma":19.4447,"dir":-1,"w":0.9284},"pred":{"mu":0.4142,"sigma":0.0809,"dir":1,"w":0.759},"top5":{"mu":0.6525,"sigma":0.0934,"dir":1,"w":0.8033},"rare":{"mu":0.0002,"sigma":0.0009,"dir":-1,"w":0.0},"seg_std":{"mu":0.2704,"sigma":0.166,"dir":-1,"w":0.8651}},"b":-1.6292}},"general":{"zh":{"dims":{"ppl":{"mu":20.9079,"sigma":15.6831,"dir":-1,"w":1.3593},"pred":{"mu":0.4695,"sigma":0.1041,"dir":1,"w":0.1},"top5":{"mu":0.7059,"sigma":0.1105,"dir":1,"w":1.9576},"rare":{"mu":0.0001,"sigma":0.0005,"dir":-1,"w":0.0},"seg_std":{"mu":0.2954,"sigma":0.1573,"dir":-1,"w":1.3676}},"b":-1.6043},"en":{"dims":{"ppl":{"mu":14.3952,"sigma":9.9941,"dir":-1,"w":2.01},"pred":{"mu":0.5058,"sigma":0.1217,"dir":1,"w":0.1},"top5":{"mu":0.7449,"sigma":0.0971,"dir":1,"w":1.9097},"rare":{"mu":0.0,"sigma":0.0002,"dir":-1,"w":0.0},"seg_std":{"mu":0.3124,"sigma":0.2119,"dir":-1,"w":1.2285}},"b":-2.5062}}};
+  var TYPE_FP = __TYPE_FP__;  // Qwen3-4B 实测校准指纹 (v8.2.0)
+  var TYPE_META = {
+    general:    {name:'通用混合', tip:'不指定类型，使用全局混合基准（人类/现代AI综合）'},
+    academic:   {name:'学术论文/研究报告', tip:'学术语体：摘要-引言-方法-结论结构，专业术语密度高。人类论文也高度结构化，AI特征阈值放宽'},
+    news:       {name:'新闻报道/时评', tip:'客观叙事+时效性表达。AI新闻模板化（导语-背景-展望）特征明显'},
+    literature: {name:'文学作品/散文', tip:'文学创作：人类写作困惑度极高、风格波动大；AI文学相对平滑可预测，差异最明显'},
+    web:        {name:'网络文章/科普', tip:'自媒体/博客/问答：人类口语化、随意；AI结构化、全面。差异中等'},
+    formal:     {name:'公文/演讲稿', tip:'正式文书：套话固定搭配多，人类与AI都程式化，差异最小，需最严格阈值'}
+  };
+  function setType(t) {
+    curType = t;
+    for (var k in TYPE_META) {
+      var el = document.getElementById('t-' + k);
+      if (el) el.className = 'type-btn' + (k === t ? ' active' : '');
+    }
+    var tip = document.getElementById('typeTip');
+    if (tip) { tip.style.display = t === 'general' ? 'none' : 'block'; tip.textContent = TYPE_META[t].tip; }
+  }
+  // ===== 逻辑回归校准器 (大模型先验 + 小模型实测校准) =====
+  // TYPE_FP 格式: {type:{lang:{dims:{ppl:{mu,sigma,dir,w},...}, b:0}}}
+  // score = sigmoid( sum(w_d * (x_d - mu_d)/sigma_d * dir_d) + b ) * 100
+  // 先验权重由大模型给出; 小模型(Qwen)实测语料后用真实标签拟合更新 mu/sigma/w/b
+  function fp(type, lang) {
+    if (!TYPE_FP) return null;
+    var t = TYPE_FP[type] || TYPE_FP['general'];
+    if (!t) return null;
+    return t[lang] || t['general'] || null;
+  }
+  // 计算 LLM 深度分 (0-100, 类型专属逻辑回归校准)
+  function typeAwareScore(metrics) {
+    var f = fp(curType, metrics.lang || 'zh');
+    if (!f || !f.dims) return metrics.llmScore;
+    var z = 0, wsum = 0;
+    var keys = ['ppl','pred','top5','rare','seg_std'];
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var d = f.dims[k];
+      if (!d || d.sigma <= 1e-9) continue;
+      var x = metrics[k];
+      if (x === undefined || isNaN(x)) continue;
+      var zz = (x - d.mu) / d.sigma;
+      if (zz > 3) zz = 3; else if (zz < -3) zz = -3;
+      z += d.w * d.dir * zz;
+      wsum += d.w;
+    }
+    if (wsum <= 0) return metrics.llmScore;
+    var b = f.b || 0;
+    var p = 1 / (1 + Math.exp(-(z + b)));
+    return Math.round(p * 100);
+  }
+  // 语言检测 (用于选择指纹基准)
+  function detectLang() {
+    var txt = document.getElementById('input').value || '';
+    var cn = (txt.match(/[一-龥]/g) || []).length;
+    var en = (txt.match(/[a-zA-Z]/g) || []).length;
+    return cn >= en ? 'zh' : 'en';
+  }
+  // 语言检测 (用于选择指纹基准)
+  function detectLang() {
+    var txt = document.getElementById('input').value || '';
+    var cn = (txt.match(/[一-龥]/g) || []).length;
+    var en = (txt.match(/[a-zA-Z]/g) || []).length;
+    return cn >= en ? 'zh' : 'en';
+  }
+  var llmStartTime = 0;
+  window.__llmProgress = function(done, total){
+    var box = document.getElementById('llmProgress');
+    if (!box) return;
+    if (llmStartTime === 0) llmStartTime = Date.now();
+    var pct = total > 0 ? Math.round(done / total * 100) : 0;
+    box.style.display = 'block';
+    document.getElementById('llmBarFill').style.width = pct + '%';
+    document.getElementById('llmPct').textContent = pct + '%';
+    // 阶段文案
+    var stage = '⏳ 逐词评估中...';
+    if (pct < 15) stage = '⏳ 正在读取文本...';
+    else if (pct < 85) stage = '大模型逐词预测中（已完成 ' + done + '/' + total + ' tokens）';
+    else stage = '汇总维度分析...';
+    document.getElementById('llmStage').textContent = stage;
+    // 剩余时间估算
+    var el = document.getElementById('llmEta');
+    if (done > 0 && el) {
+      var elapsed = (Date.now() - llmStartTime) / 1000;
+      var rate = elapsed / done;
+      var remain = Math.round(rate * (total - done));
+      if (remain < 60) el.textContent = '已用 ' + Math.round(elapsed) + 's · 预计还需 ' + remain + 's';
+      else el.textContent = '已用 ' + Math.round(elapsed) + 's · 预计还需 ' + Math.floor(remain/60) + 'm' + (remain%60) + 's';
+    }
+  };
+  // 恢复双模型 (持久化)
+  try {
+    var savedZh = localStorage.getItem('llm_model_zh');
+    var savedEn = localStorage.getItem('llm_model_en');
+    if (savedZh && window.AndroidBridge && AndroidBridge.setModelPathZh(savedZh)) {
+      var nmz = document.getElementById('llmModelNameZh');
+      if (nmz) nmz.textContent = savedZh.split('/').pop();
+    }
+    if (savedEn && window.AndroidBridge && AndroidBridge.setModelPathEn(savedEn)) {
+      var nme = document.getElementById('llmModelNameEn');
+      if (nme) nme.textContent = savedEn.split('/').pop();
+    }
+    if (savedZh || savedEn) {
+      var tip = document.getElementById('llmReadyTip');
+      if (tip) { tip.style.display = 'block'; tip.innerHTML = '⏳ 正在恢复模型并加载...'; }
+    }
+  } catch(e) {}
+  window.__permChanged = function(ok){
+    var w = document.getElementById('llmPermWarn');
+    if (w) w.style.display = ok ? 'none' : 'block';
+    if (ok) {
+      var nm = document.getElementById('llmModelName');
+      if (nm && AndroidBridge.hasModel()) nm.textContent = AndroidBridge.modelName();
+    }
+  };
+  // ===== 暴露给全局 (inline onclick 与 IIFE 外函数使用) =====
+  window.setType = setType;
+  window.detectLang = detectLang;
+  window.typeAwareScore = typeAwareScore;
+  window.TYPE_META = TYPE_META;
+  Object.defineProperty(window, 'curType', { get: function(){ return curType; } });
+})();
+
+function deepDetect(){
+  var txt = document.getElementById('input').value.trim();
+  if (txt.length < 100) { alert('请先输入至少100字文本'); return; }
+  if (!window.AndroidBridge) { alert('深度检测需要 APK 版（内置本机大模型引擎）'); return; }
+  // v8.2 双模型: 按语言自动选择 (中文→千问, 英文→Gemma)
+  var lang = detectLang();
+  curModelLangRef = lang;
+  var st = AndroidBridge.selectModel(lang);
+  if (st === 0) { alert((lang === 'zh' ? '请先选择中文模型' : '请先选择英文模型') + '：点击「选中文/选英文」扫描 GGUF 文件'); return; }
+  if (st === 1) { alert((lang === 'zh' ? '中文' : '英文') + '模型加载中，请稍候几秒再试...'); return; }
+  // 1) 快速基础检测
+  detect();
+  // 2) 自动串联 LLM 深度检测
+  runLlmPro();
+}
+
+function requestPerm(){
+  if (window.AndroidBridge && AndroidBridge.requestAllFilesAccess) AndroidBridge.requestAllFilesAccess();
+  else alert('请到 设置→应用→AIGC 文本检测→权限 开启「所有文件访问」');
+}
+
+function pickLlmModel(lang){
+  window.curScanLang = lang || 'zh';
+  if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
+  if (!AndroidBridge.hasAllFilesAccess()) {
+    document.getElementById('llmPermWarn').style.display = 'block';
+    alert('请先开启「所有文件访问」权限');
+    return;
+  }
+  var box = document.getElementById('llmModelList');
+  box.style.display = 'block';
+  box.innerHTML = '<div style="color:#888;padding:8px">⏳ 正在扫描本地模型...</div>';
+  setTimeout(function(){
+    try {
+      var list = JSON.parse(AndroidBridge.listModels() || '[]');
+      if (list.length === 0) {
+        box.innerHTML = '<div style="color:#888;padding:8px;line-height:1.6">未找到 .gguf 模型文件。<br>请将模型放到 Models/ 或 Download/ 目录，或手动输入完整路径。</div>';
+        return;
+      }
+      box.innerHTML = list.map(function(m){
+        var enc = encodeURIComponent(m.path);
+        return '<div class="model-item" data-path="' + enc + '" onclick="chooseModel(this)" style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px">' +
+          '<span style="color:var(--accent)">📄</span> ' + m.name +
+          '<span style="color:#888;font-size:10px">' + m.size.toFixed(1) + 'GB</span></div>';
+      }).join('') + '<div style="padding:6px 10px;font-size:9px;color:#666">点击选择模型</div>';
+    } catch(e) {
+      box.innerHTML = '<div style="color:var(--r);padding:8px">扫描失败: ' + e.message + '</div>';
+    }
+  }, 50);
+}
+
+function chooseModel(el){
+  try {
+    var path = decodeURIComponent(el.getAttribute('data-path'));
+    var ok = window.curScanLang === 'en' ? AndroidBridge.setModelPathEn(path) : AndroidBridge.setModelPathZh(path);
+    if (ok) {
+      var nm = document.getElementById(window.curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh');
+      if (nm) nm.textContent = path.split('/').pop();
+      document.getElementById('llmModelList').style.display = 'none';
+      try { localStorage.setItem(window.curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', path); } catch(e) {}
+    } else {
+      alert('无法读取该文件，请检查「所有文件访问」权限是否已开启');
+    }
+  } catch(e) { alert('选择失败: ' + e.message); }
+}
+
+function inputModelPath(){
+  var v = document.getElementById('llmPathInput').value.trim();
+  if (!v) { alert('请输入模型完整路径'); return; }
+  var ok = window.curScanLang === 'en' ? AndroidBridge.setModelPathEn(v) : AndroidBridge.setModelPathZh(v);
+  if (ok) {
+    document.getElementById(window.curScanLang === 'en' ? 'llmModelNameEn' : 'llmModelNameZh').textContent = v.split('/').pop();
+    try { localStorage.setItem(window.curScanLang === 'en' ? 'llm_model_en' : 'llm_model_zh', v); } catch(e) {}
+  } else {
+    alert('路径无效或无法读取，请确认: 1.路径以.gguf结尾 2.文件存在 3.已开启「所有文件访问」');
+  }
+}
+
+function runLlmPro(){
+  var box = document.getElementById('llmResult');
+  var txt = document.getElementById('input').value.trim();
+  if (!window.AndroidBridge) { alert('本功能仅在 APK 版可用'); return; }
+  if (txt.length < 100) { alert('文本至少需要100字符'); return; }
+  if (!AndroidBridge.hasModel()) { alert('请先扫描选择 GGUF 模型文件'); return; }
+  box.style.display = 'block';
+  box.textContent = '深度检测中...（本地模型约需1-3分钟，请勿退出）';
+  window.__llmResult = function(result, error){
+    // 防御: 无论成功失败, 确保输入框可用 (防止意外禁用后无法重新导入文本)
+    var inGuard = document.getElementById('input');
+    if (inGuard) { inGuard.disabled = false; inGuard.readOnly = false; }
+    if (error) { box.textContent = '❌ ' + error; return; }
+    var p = result.split('|');
+    var ppl = parseFloat(p[0]), pred = parseFloat(p[1]), rank = parseFloat(p[2]);
+    var score = parseFloat(p[3]), tokens = parseInt(p[4]);
+    var segStd = parseFloat(p[5]), rare = parseFloat(p[6]), top5 = parseFloat(p[7]);
+    var segCnt = parseInt(p[8]);
+    // --- 维度解读 ---
+    function dim(v, thrA, thrB, nameA, nameB, nameC) {
+      return v <= thrA ? nameA : v <= thrB ? nameB : nameC;
+    }
+    var pplTxt = dim(ppl, 8, 20, 'AI特征明显（高度可预测）', '可预测性中等', '接近人类（难以预测）');
+    var predTxt = dim(pred, 0.20, 0.35, '模式化程度低', '模式化程度中等', '模式化程度高（AI特征）');
+    var segTxt = segCnt < 2 ? '文本过短无法分段' : dim(segStd, 0.15, 0.35, '风格高度均匀（AI特征）', '风格一致性中等', '风格波动大（偏人类）');
+    var rareTxt = rare < 0.005 ? '罕见词检出率极低（模型限制，参考性有限）' : dim(rare, 0.08, 0.18, '用词保守（AI特征）', '用词常规', '用词自由（偏人类）');
+    var top5Txt = dim(top5, 0.40, 0.60, '用词跳跃', '用词常规', '高度可预测（AI特征）');
+    // 维度 AI 倾向分 (0-100, 高=AI)
+    function pplScore(v) { return v <= 8 ? 82 : v <= 20 ? 62 : v <= 40 ? 40 : 18; }
+    function predScore(v) { return Math.min(100, Math.round(v / 0.35 * 100)); }
+    function segScore(v) { return segCnt < 2 ? 50 : Math.round(Math.max(0, Math.min(1, 1 - (v - 0.1) / 0.35)) * 100); }
+    function rareScore(v) { return Math.round(Math.max(0, Math.min(1, 1 - v / 0.25)) * 100); }
+    function top5Score(v) { return Math.min(100, Math.round(v / 0.6 * 100)); }
+    var d1 = pplScore(ppl), d2 = predScore(pred), d3 = segScore(segStd), d4 = rareScore(rare), d5 = top5Score(top5);
+    // --- 融合: 快速检测 + LLM (修复 aiProbability 字段名 bug) ---
+    var r = window.detectResult;
+    var fused = null;
+    if (r && typeof r.aiProbability === 'number') {
+      fused = Math.round((0.55 * r.aiProbability + 0.45 * score) * 10) / 10;
+      var circ = 2 * Math.PI * 52;
+      var fg = document.getElementById('fg');
+      fg.setAttribute('stroke-dashoffset', circ * (1 - fused / 100));
+      var colors = ['#4caf50','#ffc107','#ff9800','#f44336','#f44336'];
+      var ci = fused < 25 ? 0 : fused < 40 ? 1 : fused < 60 ? 2 : fused < 80 ? 3 : 4;
+      fg.setAttribute('stroke', colors[ci]);
+      document.getElementById('pct').textContent = fused + '%';
+      document.getElementById('pct').style.color = colors[ci];
+      var lsA = document.getElementById('levelSub');
+      if (lsA) { lsA.textContent = 'AI生成概率 ' + fused + '%'; lsA.style.color = colors[ci]; }
+      var lb = document.getElementById('levelBadge');
+      var lt = document.getElementById('levelText');
+      if (lb) {
+        var lv = fused < 25 ? 'Human' : fused < 40 ? 'Maybe AI' : fused < 60 ? 'Uncertain' : fused < 80 ? 'Likely AI' : 'Very Likely AI';
+        lb.textContent = lv;
+        lb.className = 'level-badge ' + (lv === 'Human' ? 'level-human' : lv === 'Maybe AI' ? 'level-maybe' : lv === 'Uncertain' ? 'level-uncertain' : 'level-likely');
+        if (lt) lt.textContent = lv === 'Human' ? '人类写作' : lv === 'Maybe AI' ? '可能含AI' : lv === 'Uncertain' ? '不确定' : 'AI生成';
+      }
+    }
+    // ===== 类型感知深度分 (v8.2) =====
+    var tScore = typeAwareScore({ppl: ppl, pred: pred, top5: top5, rare: rare, seg_std: segStd, llmScore: score, lang: detectLang()});
+    // --- 报告卡片 (渲染到 #result, 覆盖快速检测) ---
+    function barHtml(name, val, txt, color) {
+      return '<div class="detail-item"><div class="detail-name">' + name + '</div>' +
+        '<div class="detail-bar"><div class="detail-bar-fill" style="width:' + val + '%;background:' + color + '"></div></div>' +
+        '<div class="detail-val">' + txt + '</div></div>';
+    }
+    function col(v) { return v < 30 ? '#4caf50' : v < 55 ? '#ffc107' : v < 75 ? '#ff9800' : '#f44336'; }
+    var tName = TYPE_META[curType] ? TYPE_META[curType].name : '';
+    var html = '<div style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:6px">' +
+      '<b style="color:var(--accent)">深度检测报告</b>' +
+      '<span style="color:#888;font-size:9px;margin-left:6px">' + tName + ' · 评估 ' + tokens + ' tokens · ' + segCnt + ' 段</span></div>' +
+      '<div class="detail-list">' +
+      barHtml('困惑度', d1, ppl.toFixed(1) + ' · ' + pplTxt, col(d1)) +
+      barHtml('top1可预测', d2, (pred * 100).toFixed(0) + '% · ' + predTxt, col(d2)) +
+      barHtml('top5可预测', d5, (top5 * 100).toFixed(0) + '% · ' + top5Txt, col(d5)) +
+      barHtml('分段波动', d3, segStd.toFixed(2) + ' · ' + segTxt, col(d3)) +
+      barHtml('罕见词率', d4, (rare * 100).toFixed(1) + '% · ' + rareTxt, rare < 0.005 ? '#666' : col(d4)) +
+      '</div>';
+    if (fused !== null) {
+      // 饱和保护: tScore 在 [5,95] 可信区间内才主导; 饱和(超出训练分布)时回退原生分
+      var tSafe = (tScore >= 5 && tScore <= 95);
+      var baseScore = Math.round((tSafe ? 0.6 : 0.15) * tScore + (tSafe ? 0.4 : 0.85) * score);
+      var fused2 = Math.round((0.55 * r.aiProbability + 0.45 * baseScore) * 10) / 10;
+      // 更新仪表盘 (覆盖快速结果)
+      var circ = 2 * Math.PI * 52;
+      var fg2 = document.getElementById('fg');
+      fg2.setAttribute('stroke-dashoffset', circ * (1 - fused2 / 100));
+      var colors2 = ['#4caf50','#ffc107','#ff9800','#f44336','#f44336'];
+      var ci2 = fused2 < 25 ? 0 : fused2 < 40 ? 1 : fused2 < 60 ? 2 : fused2 < 80 ? 3 : 4;
+      fg2.setAttribute('stroke', colors2[ci2]);
+      document.getElementById('pct').textContent = fused2 + '%';
+      document.getElementById('pct').style.color = colors2[ci2];
+      var lsB = document.getElementById('levelSub');
+      if (lsB) { lsB.textContent = 'AI生成概率 ' + fused2 + '%'; lsB.style.color = colors2[ci2]; }
+      var lb2 = document.getElementById('levelBadge');
+      var lt2 = document.getElementById('levelText');
+      var lv2 = fused2 < 25 ? 'Human' : fused2 < 40 ? 'Maybe AI' : fused2 < 60 ? 'Uncertain' : fused2 < 80 ? 'Likely AI' : 'Very Likely AI';
+      lb2.textContent = lv2;
+      lb2.className = 'level-badge ' + (lv2 === 'Human' ? 'level-human' : lv2 === 'Maybe AI' ? 'level-maybe' : lv2 === 'Uncertain' ? 'level-uncertain' : 'level-likely');
+      lt2.textContent = lv2 === 'Human' ? '人类写作' : lv2 === 'Maybe AI' ? '可能含AI' : lv2 === 'Uncertain' ? '不确定' : 'AI生成';
+      html += '<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:#00e5ff11;font-size:10px;line-height:1.6;color:var(--text)">' +
+        '<b>融合结论</b>：快速检测 ' + r.aiProbability + '%（×0.55）+ LLM深度分 ' + baseScore + '（×0.45）→ <b style="color:var(--accent)">' + fused2 + '% AI 生成概率</b>' +
+        (curType !== 'general' ? '（基于' + tName + '类型指纹校准）' : '') +
+        (baseScore <= 10 ? '<br><span style="color:#999">注：深度分极低 = 大模型几乎无法预测该文本，属强人类写作特征，并非检测失败</span>' : '') + '</div>';
+    }
+    html += '<div style="margin-top:6px;font-size:9px;color:#666;line-height:1.6">' +
+      '💡 原理：让大模型逐词预测你的文本——AI 写的文章 AI 一猜一个准（困惑度低、可预测率高）；人类写作难以预测（困惑度高、波动大）。' +
+      '困惑度越高、波动越大、罕见词越多 → 越像人类。深度检测结果已覆盖上方快速检测报告。</div>';
+    // 覆盖快速检测报告区
+    var res = document.getElementById('result');
+    var oldDetails = document.getElementById('details');
+    if (res && oldDetails) {
+      oldDetails.innerHTML = html;
+      var flags = document.getElementById('flags');
+      if (flags) flags.style.display = 'none';
+      var stats = document.getElementById('stats');
+      if (stats) stats.style.display = 'none';
+      res.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+    // llmResult 区显示简要确认
+    box.innerHTML = '深度检测完成（' + tName + '）— 融合 AI 概率 ' + (fused !== null ? fused + '%' : score + '分') + '，完整报告已生成';
+    box.style.display = 'block';
+    document.getElementById('llmProgress').style.display = 'none';
+  };
+  AndroidBridge.analyze(txt);
+}
 </script>
 </body>
 </html>
