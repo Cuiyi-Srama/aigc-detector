@@ -83,7 +83,7 @@ textarea:focus{border-color:var(--accent)}
 <body>
 <div class="app">
 <h1>AIGC 文本检测 v8</h1>
-<div class="subtitle">基于文本统计特征的 AI 生成内容检测 · 纯本地离线运行</div>
+<div class="subtitle">基于文本统计特征与大模型困惑度的 AI 生成内容检测 · 本地与在线双引擎</div>
 <div style="display:flex;align-items:center;gap:5px;margin:8px 0 6px;flex-wrap:wrap">
   <span style="font-size:10px;color:#888">文章类型</span>
   <button class="type-btn active" id="t-general" onclick="setType('general')">通用</button>
@@ -165,7 +165,7 @@ textarea:focus{border-color:var(--accent)}
   </div>
   <div id="apiStatus" style="font-size:10px;color:#888;margin-top:5px"></div>
   <div id="apiCalibRow" style="display:none;margin-top:6px;padding:6px 8px;border:1px solid var(--o);border-radius:6px;background:#ff980011;font-size:10px;color:#ffb74d">
-    在线检测首次使用前需<b>一键校准</b>（约20篇短文，几分钟，消耗 DeepSeek 额度约0.1-0.3元），校准后检测精度与本地模型相当。
+    在线检测基于 DeepSeek 大模型（强于本机小模型），已配置 Key 时深度检测自动优先走在线模式。首次使用前需<b>一键校准</b>（全量语料渐进校准，约10分钟，可中断续跑，消耗额度约0.2-0.5元）。
     <button class="btn btn-sample" onclick="runApiCalibration()" style="margin-left:6px">开始校准</button>
     <span id="calibStatus" style="margin-left:6px"></span>
   </div>
@@ -1224,16 +1224,15 @@ function renderDeepReport(m){
 
 // 页面加载: 网页版自动展开在线检测面板 + SW注册
 (function(){
-  if (!window.AndroidBridge) {
-    var ab = document.getElementById('apiBar');
-    if (ab) ab.style.display = 'block';
-    var k = getApiKey();
-    if (k) { var inp = document.getElementById('apiKeyInput'); if (inp) inp.value = k; }
-    var ms = document.getElementById('apiModelSel');
-    if (ms) ms.value = getApiModel();
-    var cr = document.getElementById('apiCalibRow');
-    if (cr && k) { cr.style.display = 'block'; cr.style.borderColor = loadCalib() ? 'var(--g)' : 'var(--o)'; cr.style.background = loadCalib() ? '#4caf5011' : '#ff980011'; }
-  }
+  // 在线检测面板: APK 与网页版均显示 (APK 用户可选用在线模式)
+  var ab = document.getElementById('apiBar');
+  if (ab) ab.style.display = 'block';
+  var k = getApiKey();
+  if (k) { var inp = document.getElementById('apiKeyInput'); if (inp) inp.value = k; }
+  var ms = document.getElementById('apiModelSel');
+  if (ms) ms.value = getApiModel();
+  var cr = document.getElementById('apiCalibRow');
+  if (cr && k) { cr.style.display = 'block'; cr.style.borderColor = loadCalib() ? 'var(--g)' : 'var(--o)'; cr.style.background = loadCalib() ? '#4caf5011' : '#ff980011'; }
   if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js').catch(function(){}); }
 })();
 
